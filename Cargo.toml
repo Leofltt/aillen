@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/aillen-core",
+    "crates/aillen-cli"
+]
+resolver = "2"
