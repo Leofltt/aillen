@@ -1,10 +1,19 @@
 use std::f32::consts::PI;
 use super::AudioProcessor;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FilterType {
+    LowPass,
+    HighPass,
+    BandPass,
+    Notch,
+}
+
 pub struct BiquadFilter {
     sample_rate: f32,
     pub cutoff: f32,
     pub q_factor: f32,
+    pub filter_type: FilterType,
     
     // Normalized Transposed Direct Form II coefficients
     a0: f32, a1: f32, a2: f32, b1: f32, b2: f32,
@@ -14,16 +23,21 @@ pub struct BiquadFilter {
 }
 
 impl BiquadFilter {
-    pub fn new_lowpass(sample_rate: f32, cutoff: f32, q_factor: f32) -> Self {
+    pub fn new(sample_rate: f32, cutoff: f32, q_factor: f32, filter_type: FilterType) -> Self {
         let mut filter = Self {
             sample_rate,
             cutoff,
             q_factor,
+            filter_type,
             a0: 1.0, a1: 0.0, a2: 0.0, b1: 0.0, b2: 0.0,
             z1: 0.0, z2: 0.0,
         };
         filter.calculate_coefficients();
         filter
+    }
+
+    pub fn new_lowpass(sample_rate: f32, cutoff: f32, q_factor: f32) -> Self {
+        Self::new(sample_rate, cutoff, q_factor, FilterType::LowPass)
     }
     
     pub fn set_cutoff(&mut self, cutoff: f32) {
@@ -40,18 +54,53 @@ impl BiquadFilter {
             self.calculate_coefficients();
         }
     }
+
+    pub fn set_type(&mut self, filter_type: FilterType) {
+        if self.filter_type != filter_type {
+            self.filter_type = filter_type;
+            self.calculate_coefficients();
+        }
+    }
     
     fn calculate_coefficients(&mut self) {
         let w0 = 2.0 * PI * self.cutoff / self.sample_rate;
         let alpha = w0.sin() / (2.0 * self.q_factor);
         let cos_w0 = w0.cos();
         
-        let b0 = (1.0 - cos_w0) / 2.0;
-        let b1 = 1.0 - cos_w0;
-        let b2 = (1.0 - cos_w0) / 2.0;
-        let a0 = 1.0 + alpha;
-        let a1 = -2.0 * cos_w0;
-        let a2 = 1.0 - alpha;
+        let (b0, b1, b2, a0, a1, a2) = match self.filter_type {
+            FilterType::LowPass => (
+                (1.0 - cos_w0) / 2.0,
+                1.0 - cos_w0,
+                (1.0 - cos_w0) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
+            FilterType::HighPass => (
+                (1.0 + cos_w0) / 2.0,
+                -(1.0 + cos_w0),
+                (1.0 + cos_w0) / 2.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
+            FilterType::BandPass => (
+                alpha,
+                0.0,
+                -alpha,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
+            FilterType::Notch => (
+                1.0,
+                -2.0 * cos_w0,
+                1.0,
+                1.0 + alpha,
+                -2.0 * cos_w0,
+                1.0 - alpha,
+            ),
+        };
         
         self.a0 = b0 / a0;
         self.a1 = b1 / a0;

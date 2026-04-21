@@ -1,57 +1,107 @@
 # Aillen
 
-Opinionated feature incomplete audio engine, dsp lib and live synthesizers.
+Opinionated, feature-incomplete audio engine, DSP library, and live synthesizers.
 
 ## Project Structure
 
-This project is set up as a Cargo Workspace with modern Rust 1.92 standards, containing:
-- `aillen-core`: A pure, dependency-free DSP library hosting mathematical primitives, oscillators, filters, ADSR envelopes, and `SynthVoice`/`PolySynth` assemblies.
+This project is set up as a Cargo Workspace containing:
+
+- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters, ADSR envelopes, and instrument implementations based on a generic `Voice` trait.
 - `aillen-cli`: A standalone performance synthesizer that wraps `aillen-core` with real-time audio (`cpal`) and an asynchronous UDP OSC server mapped via lock-free channels (`crossbeam-channel`).
 
-## Compiling
+---
 
-To build the entire workspace optimally, use the `--workspace` flag:
+## 1. CLI Usage
+
+### Compiling
+
+To build the entire workspace optimally, use the `--release` flag:
 
 ```bash
 cargo build --workspace --release
 ```
 
-To quickly check for compilation/syntax errors without producing a binary:
+### Starting the Synth
 
 ```bash
-cargo check --workspace
+# Start with default settings (8 voices, port 8000)
+cargo run -p aillen-cli --release
+
+# Start with specific options
+cargo run -p aillen-cli --release -- --port 9000 --voices 4
 ```
 
-## Running the Live Synthesizer
+### Audio Device Management
 
-You can run the CLI synth directly. It connects to your default OS audio device and begins listening for UDP OSC messages on port 8000. It defaults to 8-voice polyphony!
+If you have multiple audio interfaces, use these flags to select the correct one:
 
 ```bash
-cargo run --release -p aillen-cli
+# List all available output devices and their indices
+cargo run -p aillen-cli -- --list-devices
+
+# Start using a specific device by index (e.g., index 2)
+cargo run -p aillen-cli -- --device-index 2
 ```
 
-*(Options: `--port 9000` to change the UDP port, `--voices 8` to set polyphony count. Setting `--voices 1` creates a purely monophonic synth).*
+---
 
-## Testing with OSC
+## 2. OSC API (TwoOp Instrument)
 
-Once the application is running and the audio thread is active, you can interact with the engine using any OSC-compliant software (like Max/MSP, PureData, TouchOSC, or the `oscsend` CLI utility) by sending messages to `127.0.0.1:8000`.
+The Aillen CLI listens for OSC messages over UDP (default port 8000). Currently, it hosts the **TwoOp** instrument, and all messages for it must be prepended with `/two_op/`.
 
-- **Trigger a Note On:**
-  - Address: `/note/on`
-  - Arguments: `[frequency (f32), velocity (f32)]`
-  - Example: `oscsend localhost 8000 /note/on ff 440.0 1.0`
-  
-- **Trigger a Note Off:**
-  - Address: `/note/off`
-  - Arguments: `[frequency (f32)]` (optional, ommiting it turns off all active notes)
-  - Example: `oscsend localhost 8000 /note/off f 440.0`
+### Note Control
 
-- **Trigger a Timed Note (Auto Release):**
-  - Address: `/note`
-  - Arguments: `[frequency (f32), duration_ms (f32), velocity (f32)]`
-  - Example: `oscsend localhost 8000 /note fff 440.0 500.0 1.0` (Plays for 500ms then triggers release automatically)
+| Address | Arguments | Description |
+| :--- | :--- | :--- |
+| `/two_op/note` | `fff` | `[freq, duration_ms, velocity]` Plays a timed note. |
+| `/two_op/note/on` | `ff` | `[freq, velocity]` Triggers a note. |
+| `/two_op/note/off` | `f` | `[freq]` Releases a specific frequency, or all notes if no arg. |
+| `/two_op/legato` | `i` | 0/1: Enables legato (mono mode only) to skip envelope re-triggering. |
 
-- **Enable/Disable Legato (Mono Mode Only):**
-  - Address: `/legato`
-  - Arguments: `[enabled (bool or int or float)]`
-  - Example: `oscsend localhost 8000 /legato i 1` (Enables legato so sustained notes don't re-trigger envelopes when playing monophonically)
+### Synthesis Engine
+
+| Address | Argument | Description |
+| :--- | :--- | :--- |
+| `/two_op/mode` | `i` | 0: Additive, 1: AM, 2: **RM (Ring Mod)**, 3: FM |
+| `/two_op/osc1/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
+| `/two_op/osc2/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
+| `/two_op/mod/params` | `fff` | `[index, ratio, detune]` FM/AM/RM intensity and tuning. |
+
+### Envelopes & Filter
+
+| Address | Arguments | Description |
+| :--- | :--- | :--- |
+| `/two_op/osc1/adsr` | `ffff` | `[A, D, S, R]` Amplitude envelope (Sec, Sec, 0.0-1.0, Sec). |
+| `/two_op/osc2/adsr` | `ffff` | `[A, D, S, R]` Modulator envelope. |
+| `/two_op/filter/adsr` | `ffff` | `[A, D, S, R]` Cutoff modulation envelope. |
+| `/two_op/filter/params` | `ffi` | `[cutoff, Q, type]` (Type: 0:LP, 1:HP, 2:BP, 3:Notch). |
+| `/two_op/filter/mod` | `bf` | `[enabled, amount]` Enable envelope modulation and set depth (Hz). |
+
+---
+
+## 3. Atomic Updates (Bundles)
+
+To change a patch and trigger a note simultaneously without artifacts, use **OSC Bundles**.
+
+**Python (python-osc) Example:**
+
+```python
+from pythonosc import udp_client, osc_bundle_builder, osc_message_builder
+
+client = udp_client.SimpleUDPClient("127.0.0.1", 8000)
+bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
+
+# Switch to RM mode (index 2)
+msg = osc_message_builder.OscMessageBuilder(address="/two_op/mode")
+msg.add_arg(2) 
+bundle.add_content(msg.build())
+
+# Play note
+msg = osc_message_builder.OscMessageBuilder(address="/two_op/note")
+msg.add_arg(220.0) # Hz
+msg.add_arg(500.0) # ms
+msg.add_arg(0.7)   # velocity
+bundle.add_content(msg.build())
+
+client.send(bundle.build())
+```
