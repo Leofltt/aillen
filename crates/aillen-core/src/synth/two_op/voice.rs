@@ -1,15 +1,15 @@
 use crate::dsp::{
-    oscillator::{PolyBlepOscillator, Waveform},
+    oscillator::PolyBlepOscillator,
     filter::BiquadFilter,
     envelope::AdsrEnvelope,
     AudioNode, AudioProcessor,
 };
 use crate::synth::Voice;
-use super::SynthMode;
+use super::{SynthMode, TwoOpPatch};
 
 pub struct TwoOpVoice {
     sample_rate: f32,
-    pub mode: SynthMode,
+    pub patch: TwoOpPatch,
     
     pub osc1: PolyBlepOscillator,
     pub osc2: PolyBlepOscillator,
@@ -18,12 +18,6 @@ pub struct TwoOpVoice {
     
     pub filter: BiquadFilter,
     pub filter_env: AdsrEnvelope,
-    pub filter_mod_enabled: bool,
-    pub filter_env_amount: f32,
-    
-    pub modulation_index: f32,
-    pub osc2_detune: f32,
-    pub osc2_ratio: f32,
     
     pub active: bool,
     pub base_frequency: f32,
@@ -34,33 +28,58 @@ pub struct TwoOpVoice {
 
 impl TwoOpVoice {
     pub fn new(sample_rate: f32) -> Self {
-        let osc1 = PolyBlepOscillator::new(sample_rate, 440.0, Waveform::Saw);
-        let osc2 = PolyBlepOscillator::new(sample_rate, 440.0, Waveform::Saw);
-        let osc1_env = AdsrEnvelope::new(sample_rate, 0.01, 0.2, 0.5, 0.5);
-        let osc2_env = AdsrEnvelope::new(sample_rate, 0.01, 0.2, 0.5, 0.5);
+        let patch = TwoOpPatch::default();
+        let osc1 = PolyBlepOscillator::new(sample_rate, 440.0, patch.osc1_waveform);
+        let osc2 = PolyBlepOscillator::new(sample_rate, 440.0, patch.osc2_waveform);
         
-        let filter = BiquadFilter::new_lowpass(sample_rate, 1000.0, 0.707);
-        let filter_env = AdsrEnvelope::new(sample_rate, 0.05, 0.3, 0.2, 0.5);
+        let osc1_env = AdsrEnvelope::new(sample_rate, patch.osc1_adsr[0], patch.osc1_adsr[1], patch.osc1_adsr[2], patch.osc1_adsr[3]);
+        let osc2_env = AdsrEnvelope::new(sample_rate, patch.osc2_adsr[0], patch.osc2_adsr[1], patch.osc2_adsr[2], patch.osc2_adsr[3]);
+        
+        let filter = BiquadFilter::new(sample_rate, patch.filter_cutoff, patch.filter_q, patch.filter_type);
+        let filter_env = AdsrEnvelope::new(sample_rate, patch.filter_adsr[0], patch.filter_adsr[1], patch.filter_adsr[2], patch.filter_adsr[3]);
         
         Self {
             sample_rate,
-            mode: SynthMode::Additive,
+            patch,
             osc1,
             osc2,
             osc1_env,
             osc2_env,
             filter,
             filter_env,
-            filter_mod_enabled: true,
-            filter_env_amount: 5000.0,
-            modulation_index: 1.0,
-            osc2_detune: 0.0,
-            osc2_ratio: 1.0,
             active: false,
             base_frequency: 440.0,
             note_duration_samples: None,
             samples_played: 0,
         }
+    }
+
+    pub fn set_patch(&mut self, patch: TwoOpPatch) {
+        self.patch = patch;
+        self.osc1.set_waveform(patch.osc1_waveform);
+        self.osc2.set_waveform(patch.osc2_waveform);
+        
+        self.osc1_env.attack = patch.osc1_adsr[0];
+        self.osc1_env.decay = patch.osc1_adsr[1];
+        self.osc1_env.sustain = patch.osc1_adsr[2];
+        self.osc1_env.release = patch.osc1_adsr[3];
+        self.osc1_env.recalculate_rates();
+
+        self.osc2_env.attack = patch.osc2_adsr[0];
+        self.osc2_env.decay = patch.osc2_adsr[1];
+        self.osc2_env.sustain = patch.osc2_adsr[2];
+        self.osc2_env.release = patch.osc2_adsr[3];
+        self.osc2_env.recalculate_rates();
+
+        self.filter_env.attack = patch.filter_adsr[0];
+        self.filter_env.decay = patch.filter_adsr[1];
+        self.filter_env.sustain = patch.filter_adsr[2];
+        self.filter_env.release = patch.filter_adsr[3];
+        self.filter_env.recalculate_rates();
+
+        self.filter.set_cutoff(patch.filter_cutoff);
+        self.filter.set_q(patch.filter_q);
+        self.filter.set_type(patch.filter_type);
     }
     
     pub fn trigger_note(&mut self, frequency: f32, velocity: f32, duration_ms: f32) {
@@ -117,16 +136,18 @@ impl AudioNode for TwoOpVoice {
         let env2 = self.osc2_env.process();
         let f_env = self.filter_env.process();
         
-        if self.filter_mod_enabled {
-            let cutoff = self.filter.cutoff + (self.filter_env_amount * f_env);
+        if self.patch.filter_mod_enabled {
+            let cutoff = self.patch.filter_cutoff + (self.patch.filter_env_amount * f_env);
             self.filter.set_cutoff(cutoff);
+        } else {
+            self.filter.set_cutoff(self.patch.filter_cutoff);
         }
         
-        let osc2_freq = self.base_frequency * self.osc2_ratio + self.osc2_detune;
+        let osc2_freq = self.base_frequency * self.patch.osc2_ratio + self.patch.osc2_detune;
         self.osc2.set_frequency(osc2_freq);
 
         let mut sample = 0.0;
-        match self.mode {
+        match self.patch.mode {
             SynthMode::Additive => {
                 self.osc1.set_frequency(self.base_frequency);
                 sample += self.osc1.process() * env1 * 0.5;
@@ -136,16 +157,16 @@ impl AudioNode for TwoOpVoice {
                 self.osc1.set_frequency(self.base_frequency);
                 let carrier = self.osc1.process();
                 let modulator = self.osc2.process() * env2;
-                sample = carrier * (1.0 + modulator * self.modulation_index) * env1;
+                sample = carrier * (1.0 + modulator * self.patch.modulation_index) * env1;
             }
             SynthMode::Rm => {
                 self.osc1.set_frequency(self.base_frequency);
                 let carrier = self.osc1.process();
                 let modulator = self.osc2.process() * env2;
-                sample = carrier * modulator * self.modulation_index * env1;
+                sample = carrier * modulator * self.patch.modulation_index * env1;
             }
             SynthMode::Fm => {
-                let modulator = self.osc2.process() * env2 * self.modulation_index * self.base_frequency;
+                let modulator = self.osc2.process() * env2 * self.patch.modulation_index * self.base_frequency;
                 self.osc1.set_frequency(self.base_frequency + modulator);
                 sample = self.osc1.process() * env1;
             }
