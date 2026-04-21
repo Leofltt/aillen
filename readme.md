@@ -50,6 +50,7 @@ cargo run -p aillen-cli -- --device-index 2
 The Aillen CLI listens for OSC messages over UDP (default port 8000). Currently, it hosts the **TwoOp** instrument, and all messages for it must be prepended with `/two_op/`.
 
 ### Timbral Behavior: Polytimbral vs Monotimbral
+
 By default, the synth is **Polytimbral**. This means each note "captures" the current master patch when it is triggered. If you change a parameter (like cutoff) while notes are already ringing, those existing notes will **not** change.
 
 To enable live tweaking of active notes (Monotimbral mode), send `/two_op/realtime i 1`.
@@ -71,7 +72,7 @@ To enable live tweaking of active notes (Monotimbral mode), send `/two_op/realti
 
 | Address | Argument | Description |
 | :--- | :--- | :--- |
-| `/two_op/mode` | `i` | 0: Additive, 1: AM, 2: **RM (Ring Mod)**, 3: FM |
+| `/two_op/mode` | `i` | 0: Additive, 1: AM, 2: RM, 3: FM |
 | `/two_op/osc1/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
 | `/two_op/osc2/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
 | `/two_op/mod/params` | `fff` | `[index, ratio, detune]` FM/AM/RM intensity and tuning. |
