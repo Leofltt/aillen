@@ -5,3 +5,7 @@ edition = "2024"
 rust-version = "1.92"
 
 [dependencies]
+symphonia = { version = "0.5", features = ["mp3", "wav", "flac"] }
+anyhow = "1.0"
+
+

@@ -1,4 +1,6 @@
 pub mod two_op;
+pub mod sampler;
+
 
 use crate::dsp::AudioNode;
 
