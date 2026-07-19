@@ -7,6 +7,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::audio::{AudioBufferRef, Signal};
+use crate::dsp::filter::DjFilter;
+use crate::dsp::AudioProcessor;
 
 /// Modes of playback for loaded audio samples.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -462,6 +464,10 @@ pub struct Sampler {
     pub grain_size_ms: f32,
     /// Overlapping grain count.
     pub overlap: usize,
+    /// Stereo DJ performance filter left channel.
+    pub dj_filter_l: DjFilter,
+    /// Stereo DJ performance filter right channel.
+    pub dj_filter_r: DjFilter,
 }
 
 impl Sampler {
@@ -481,6 +487,8 @@ impl Sampler {
             stretch_mode: StretchMode::Resample,
             grain_size_ms: 40.0,
             overlap: 4,
+            dj_filter_l: DjFilter::new(sample_rate),
+            dj_filter_r: DjFilter::new(sample_rate),
         }
     }
 
@@ -579,7 +587,13 @@ impl Sampler {
         }
     }
 
-    /// Sums polyphonic voice outputs and applies headroom gain.
+    /// Sets the position of the DJ filter at the end of the sampler chain.
+    pub fn set_dj_filter_position(&mut self, pos: f32) {
+        self.dj_filter_l.set_position(pos);
+        self.dj_filter_r.set_position(pos);
+    }
+
+    /// Sums polyphonic voice outputs, applies headroom gain, and routes through the DJ performance filter.
     pub fn process(&mut self) -> (f32, f32) {
         let mut mix_l = 0.0;
         let mut mix_r = 0.0;
@@ -595,7 +609,9 @@ impl Sampler {
         }
 
         let headroom = 1.0 / (active_count as f32).max(1.0).sqrt();
-        (mix_l * headroom, mix_r * headroom)
+        let out_l = self.dj_filter_l.process(mix_l * headroom);
+        let out_r = self.dj_filter_r.process(mix_r * headroom);
+        (out_l, out_r)
     }
 }
 

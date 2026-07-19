@@ -1,5 +1,5 @@
 use std::f32::consts::PI;
-use super::AudioProcessor;
+use crate::dsp::AudioProcessor;
 
 /// Supported types of biquad filter.
 #[derive(Clone, Copy, Debug, PartialEq)]

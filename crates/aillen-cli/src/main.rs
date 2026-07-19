@@ -26,6 +26,9 @@ struct Args {
     /// Flags to list all available host output devices and exit.
     #[arg(short, long)]
     list_devices: bool,
+    /// Path to a directory containing audio samples to load on startup.
+    #[arg(short, long)]
+    samples_dir: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -35,6 +38,22 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     println!("Aillen Synthesizer CLI Starting up...");
+
+    let mut bank = aillen_core::sample_bank::SampleBank::new();
+    let target_dir = args.samples_dir.or_else(|| {
+        std::env::var("HOME")
+            .map(|h| format!("{}/Desktop/KairosSamples", h))
+            .ok()
+    });
+
+    if let Some(ref dir) = target_dir {
+        println!("SampleBank: Scanning directory: {}", dir);
+        if let Err(e) = bank.load_directory(dir) {
+            eprintln!("SampleBank error (directory might not exist): {:?}", e);
+        } else {
+            println!("SampleBank: Loaded {} samples.", bank.samples.len());
+        }
+    }
     
     // Create crossbeam channel for passing messages from OSC server to CPAL audio thread
     let (prod, cons) = bounded::<AudioMessage>(256);
@@ -51,11 +70,11 @@ fn main() -> anyhow::Result<()> {
             Ok((size, _client_addr)) => {
                 let packet_slice = &buf[..size];
                 match rosc::decoder::decode_udp(packet_slice) {
-                    Ok((_, OscPacket::Message(msg))) => handle_osc_message(msg, &prod),
+                    Ok((_, OscPacket::Message(msg))) => handle_osc_message(msg, &prod, &bank),
                     Ok((_, OscPacket::Bundle(bundle))) => {
                         for packet in bundle.content {
                             if let OscPacket::Message(msg) = packet {
-                                handle_osc_message(msg, &prod);
+                                handle_osc_message(msg, &prod, &bank);
                             }
                         }
                     }
@@ -71,8 +90,10 @@ use aillen_core::dsp::{oscillator::Waveform, filter::FilterType};
 use aillen_core::synth::two_op::SynthMode;
 use aillen_core::synth::sampler::{PlayMode, StretchMode};
 
+use aillen_core::sample_bank::SampleBank;
+
 /// Routes a single decoded OSC message to the audio message queue.
-fn handle_osc_message(msg: OscMessage, prod: &Sender<AudioMessage>) {
+fn handle_osc_message(msg: OscMessage, prod: &Sender<AudioMessage>, bank: &SampleBank) {
     let addr = msg.addr.as_str();
     println!("Received OSC: {} | Args: {:?}", addr, msg.args);
     if addr.starts_with("/track/") {
@@ -228,6 +249,15 @@ fn handle_osc_message(msg: OscMessage, prod: &Sender<AudioMessage>) {
                             let _ = prod.try_send(AudioMessage::SamplerLoadSample { path });
                         }
                     }
+                    "sample/select" if track_id == 1 => {
+                        if let Some(name) = msg.args.get(0).and_then(|a| a.clone().string()) {
+                            if let Some(buffer) = bank.get(&name) {
+                                let _ = prod.try_send(AudioMessage::SamplerLoadBuffer { buffer });
+                            } else {
+                                eprintln!("SampleBank: Sample not found: \"{}\"", name);
+                            }
+                        }
+                    }
                     "sample/mode" if track_id == 1 => {
                         if let Some(arg) = msg.args.get(0) {
                             let mode_idx = arg.clone().int().unwrap_or(0);
@@ -271,6 +301,11 @@ fn handle_osc_message(msg: OscMessage, prod: &Sender<AudioMessage>) {
                             let _ = prod.try_send(AudioMessage::SamplerSetOverlap { overlap });
                         }
                     }
+                    "filter" if track_id == 1 => {
+                        if let Some(pos) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                            let _ = prod.try_send(AudioMessage::SamplerSetDjFilter { position: pos });
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -278,6 +313,10 @@ fn handle_osc_message(msg: OscMessage, prod: &Sender<AudioMessage>) {
     } else if addr == "/mixer/master/volume" {
         if let Some(vol) = msg.args.get(0).and_then(|a| a.clone().float()) {
             let _ = prod.try_send(AudioMessage::SetMasterVolume { volume: vol });
+        }
+    } else if addr == "/mixer/master/filter" {
+        if let Some(pos) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            let _ = prod.try_send(AudioMessage::MixerSetMasterFilter { position: pos });
         }
     }
 }

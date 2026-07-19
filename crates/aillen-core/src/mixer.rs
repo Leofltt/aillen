@@ -1,6 +1,8 @@
 use crate::dsp::panner::{Panner, PanMode};
 use crate::synth::two_op::two_op::TwoOpSynth;
 use crate::synth::sampler::Sampler;
+use crate::dsp::filter::DjFilter;
+use crate::dsp::AudioProcessor;
 
 /// Represents the set of sound generation instruments supported by Aillen.
 pub enum Instrument {
@@ -113,6 +115,10 @@ pub struct Mixer {
     pub tracks: [Track; 2],
     /// Global master volume level.
     pub master_volume: f32,
+    /// Master stereo DJ filter left channel.
+    pub master_filter_l: DjFilter,
+    /// Master stereo DJ filter right channel.
+    pub master_filter_r: DjFilter,
 }
 
 impl Mixer {
@@ -124,6 +130,8 @@ impl Mixer {
         Self {
             tracks: [synth_track, sampler_track],
             master_volume: 1.0,
+            master_filter_l: DjFilter::new(sample_rate),
+            master_filter_r: DjFilter::new(sample_rate),
         }
     }
 
@@ -132,7 +140,13 @@ impl Mixer {
         self.master_volume = volume.max(0.0);
     }
 
-    /// Processes and sums a single stereo output sample frame across all tracks, applying master volume.
+    /// Sets the master DJ filter position.
+    pub fn set_master_filter_position(&mut self, pos: f32) {
+        self.master_filter_l.set_position(pos);
+        self.master_filter_r.set_position(pos);
+    }
+
+    /// Processes and sums a single stereo output sample frame across all tracks, applying master volume and master filter.
     pub fn process(&mut self) -> (f32, f32) {
         let mut out_l = 0.0;
         let mut out_r = 0.0;
@@ -143,9 +157,12 @@ impl Mixer {
             out_r += r;
         }
 
+        let summed_l = out_l * self.master_volume;
+        let summed_r = out_r * self.master_volume;
+
         (
-            out_l * self.master_volume,
-            out_r * self.master_volume,
+            self.master_filter_l.process(summed_l),
+            self.master_filter_r.process(summed_r),
         )
     }
 }

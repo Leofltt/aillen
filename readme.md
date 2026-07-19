@@ -6,7 +6,7 @@ Opinionated, feature-incomplete audio engine, DSP library, and live synthesizers
 
 This project is set up as a Cargo Workspace containing:
 
-- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters, ADSR envelopes, a stereo mixer, and instrument implementations (including a 2-operator FM synth and a sampler).
+- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including standard Biquad and DJ performance filters), ADSR envelopes, a stereo mixer, and instrument implementations (including a 2-operator FM synth, a sampler, and a sample bank).
 - `aillen-cli`: A standalone performance synthesizer that wraps `aillen-core` with real-time stereo audio (`cpal`) and an asynchronous UDP OSC server mapped via lock-free channels (`crossbeam-channel`).
 
 ---
@@ -24,8 +24,11 @@ cargo build --workspace --release
 ### Starting the Synth
 
 ```bash
-# Start with default settings (8 voices, port 8000)
+# Start with default settings (8 voices, port 8000, and scanning ~/Desktop/KairosSamples)
 cargo run -p aillen-cli --release
+
+# Start with a custom sample directory
+cargo run -p aillen-cli --release -- --samples-dir "/path/to/my/breaks"
 
 # Start with specific options
 cargo run -p aillen-cli --release -- --port 9000 --voices 4
@@ -47,7 +50,7 @@ cargo run -p aillen-cli -- --device-index 2
 
 ## 2. Audio Mixer & Instrument Tracks
 
-The engine now supports a stereo Mixer with exactly two instrument tracks:
+The engine supports a stereo Mixer with exactly two instrument tracks:
 - **Track 0**: `TwoOp` (FM Synth)
 - **Track 1**: `Sampler` (Sample playback engine with multi-format support via Symphonia)
 
@@ -58,6 +61,7 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | Address | Arguments | Description |
 | :--- | :--- | :--- |
 | `/mixer/master/volume` | `f` | Master output volume gain factor (e.g., 0.0 - 1.0+). |
+| `/mixer/master/filter` | `f` | Master output DJ filter position from `-1.0` (LP sweep) to `1.0` (HP sweep). Center `0.0` is bypass. |
 | `/track/<id>/volume` | `f` | Individual track volume gain factor. |
 | `/track/<id>/pan` | `f` | Track panning position from `-1.0` (Hard Left) to `1.0` (Hard Right). |
 | `/track/<id>/mute` | `i`/`b` | Mute (1 or true) or unmute (0 or false) the track. |
@@ -96,14 +100,27 @@ Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 
 | Address | Argument | Description |
 | :--- | :--- | :--- |
-| `/track/1/sample/load` | `s` | `[path]` Loads an audio file from disk into the sampler. |
+| `/track/1/sample/load` | `s` | `[path]` Loads an audio file from disk into the sampler in real-time. |
+| `/track/1/sample/select` | `s` | `[name]` Selects a preloaded sample by its relative path inside the `SampleBank`. |
 | `/track/1/sample/mode` | `i` | `[mode]` 0: OneShot (default), 1: Loop. |
 | `/track/1/sample/pitch` | `f` | `[ratio]` Base pitch shifting factor (default 1.0). |
 | `/track/1/sample/speed` | `f` | `[ratio]` Base playback speed factor (default 1.0). |
+| `/track/1/sample/mode/stretch`| `i` | `[stretch_mode]` 0: Resample (default), 1: Granular (independent pitch/time). |
+| `/track/1/sample/grain_size` | `f` | `[size_ms]` Granular grain size duration in milliseconds (default 40.0). |
+| `/track/1/sample/overlap` | `i` | `[overlap]` Overlapping grain count from 1 to 16 (default 4). |
+| `/track/1/filter` | `f` | Sampler output channel DJ filter position from `-1.0` (LP) to `1.0` (HP). Center `0.0` is bypass. |
 
 ---
 
-## 4. Atomic Updates (Bundles)
+## 4. SampleBank Loading
+
+Aillen can automatically scan a directory on startup (defaulting to `~/Desktop/KairosSamples` if not specified) and preload all found `.wav`, `.flac`, and `.mp3` files.
+
+You can trigger these preloaded buffers instantly via OSC using `/track/1/sample/select "subfolder/myloop.wav"`.
+
+---
+
+## 5. Atomic Updates (Bundles)
 
 To update multiple parameters and trigger notes simultaneously without artifacts, use **OSC Bundles**.
 

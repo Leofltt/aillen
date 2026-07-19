@@ -6,6 +6,7 @@ use anyhow::Result;
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::Receiver;
+use std::sync::Arc;
 
 /// Message types sent from the OSC server thread to the real-time audio thread.
 pub enum AudioMessage {
@@ -163,6 +164,11 @@ pub enum AudioMessage {
         /// Overlapping grains.
         overlap: usize 
     },
+    /// Loads a preloaded sample buffer directly into the Sampler (Track 1) buffer.
+    SamplerLoadBuffer {
+        /// Shared sample buffer wrapper.
+        buffer: Arc<aillen_core::synth::sampler::SampleBuffer>,
+    },
 
     // Mixer settings
     /// Sets the volume gain of a specific track.
@@ -190,6 +196,16 @@ pub enum AudioMessage {
     SetMasterVolume { 
         /// Master volume gain.
         volume: f32 
+    },
+    /// Sets the Sampler DJ performance filter position.
+    SamplerSetDjFilter {
+        /// Position from -1.0 to 1.0.
+        position: f32
+    },
+    /// Sets the Mixer master output DJ performance filter position.
+    MixerSetMasterFilter {
+        /// Position from -1.0 to 1.0.
+        position: f32
     },
 }
 
@@ -365,6 +381,15 @@ pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_
                                     sampler.set_overlap(overlap);
                                 }
                             }
+                            AudioMessage::SamplerLoadBuffer { buffer } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.sample_buffer = Some(buffer.clone());
+                                    for voice in &mut sampler.voices {
+                                        voice.sample_buffer = Some(buffer.clone());
+                                    }
+                                    println!("Sampler: Switched to preloaded buffer from SampleBank!");
+                                }
+                            }
                             AudioMessage::SetTrackVolume { track_id, volume } => {
                                 if track_id < mixer.tracks.len() {
                                     mixer.tracks[track_id].set_volume(volume);
@@ -382,6 +407,14 @@ pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_
                             }
                             AudioMessage::SetMasterVolume { volume } => {
                                 mixer.set_master_volume(volume);
+                            }
+                            AudioMessage::SamplerSetDjFilter { position } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_dj_filter_position(position);
+                                }
+                            }
+                            AudioMessage::MixerSetMasterFilter { position } => {
+                                mixer.set_master_filter_position(position);
                             }
                         }
                     }
