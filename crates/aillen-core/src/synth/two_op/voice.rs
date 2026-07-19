@@ -7,19 +7,29 @@ use crate::dsp::{
 use crate::synth::Voice;
 use super::{SynthMode, TwoOpPatch};
 
+/// A single polyphonic voice for the `TwoOpSynth`, containing oscillators, envelopes, and a resonant biquad filter.
 pub struct TwoOpVoice {
     sample_rate: f32,
+    /// Active patch parameters for this voice.
     pub patch: TwoOpPatch,
     
+    /// Carrier oscillator.
     pub osc1: PolyBlepOscillator,
+    /// Modulator oscillator.
     pub osc2: PolyBlepOscillator,
+    /// Amplitude envelope for Operator 1.
     pub osc1_env: AdsrEnvelope,
+    /// Amplitude/modulation envelope for Operator 2.
     pub osc2_env: AdsrEnvelope,
     
+    /// Low/high-pass biquad filter.
     pub filter: BiquadFilter,
+    /// Filter cutoff modulation envelope.
     pub filter_env: AdsrEnvelope,
     
+    /// Whether this voice is active and producing sound.
     pub active: bool,
+    /// The fundamental midi frequency of the note triggered.
     pub base_frequency: f32,
     
     note_duration_samples: Option<usize>,
@@ -27,6 +37,7 @@ pub struct TwoOpVoice {
 }
 
 impl TwoOpVoice {
+    /// Initializes a new `TwoOpVoice` configured for the target sample rate.
     pub fn new(sample_rate: f32) -> Self {
         let patch = TwoOpPatch::default();
         let osc1 = PolyBlepOscillator::new(sample_rate, 440.0, patch.osc1_waveform);
@@ -54,6 +65,7 @@ impl TwoOpVoice {
         }
     }
 
+    /// Overwrites the voice's patch configuration and updates all internal DSP modules.
     pub fn set_patch(&mut self, patch: TwoOpPatch) {
         self.patch = patch;
         self.osc1.set_waveform(patch.osc1_waveform);
@@ -82,6 +94,7 @@ impl TwoOpVoice {
         self.filter.set_type(patch.filter_type);
     }
     
+    /// Triggers note playback. Silences automatically after `duration_ms` if greater than zero.
     pub fn trigger_note(&mut self, frequency: f32, velocity: f32, duration_ms: f32) {
         self.note_on(frequency, velocity);
         if duration_ms > 0.0 {
@@ -91,6 +104,7 @@ impl TwoOpVoice {
 }
 
 impl Voice for TwoOpVoice {
+    /// Triggers note start, resetting envelopes.
     fn note_on(&mut self, frequency: f32, _velocity: f32) {
         self.base_frequency = frequency;
         self.osc1_env.trigger_on();
@@ -101,22 +115,26 @@ impl Voice for TwoOpVoice {
         self.samples_played = 0;
     }
 
+    /// Releases envelopes to start note decay/release fadeout.
     fn note_off(&mut self) {
         self.osc1_env.trigger_off();
         self.osc2_env.trigger_off();
         self.filter_env.trigger_off();
     }
 
+    /// Checks if the voice envelopes are active.
     fn is_active(&self) -> bool {
         self.osc1_env.is_active() || self.osc2_env.is_active()
     }
 
+    /// Sets base oscillator frequency.
     fn set_frequency(&mut self, frequency: f32) {
         self.base_frequency = frequency;
     }
 }
 
 impl AudioNode for TwoOpVoice {
+    /// Processes a single sample frame, evaluating synthesis algorithm modes and applying filters.
     fn process(&mut self) -> f32 {
         if !self.is_active() {
             self.active = false;

@@ -1,22 +1,34 @@
 use std::f32::consts::PI;
 use super::AudioNode;
 
+/// Supported oscillator waveforms.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Waveform {
+    /// Pure Sine wave.
     Sine,
+    /// Sawtooth wave.
     Saw,
+    /// Square wave.
     Square,
+    /// Triangle wave.
     Triangle,
 }
 
+/// A naive oscillator implementation which contains aliasing harmonics.
+/// Useful for low-frequency oscillators (LFOs) or when alias distortion is desired.
 pub struct NaiveOscillator {
+    /// Active sample rate in Hz.
     pub sample_rate: f32,
+    /// Current oscillator frequency in Hz.
     pub frequency: f32,
+    /// Selected waveform.
     pub waveform: Waveform,
+    /// Internal accumulator phase from 0.0 to 1.0.
     phase: f32,
 }
 
 impl NaiveOscillator {
+    /// Creates a new `NaiveOscillator`.
     pub fn new(sample_rate: f32, frequency: f32, waveform: Waveform) -> Self {
         Self {
             sample_rate,
@@ -26,16 +38,19 @@ impl NaiveOscillator {
         }
     }
     
+    /// Updates the oscillator's target frequency.
     pub fn set_frequency(&mut self, frequency: f32) {
         self.frequency = frequency;
     }
 
+    /// Updates the oscillator's waveform.
     pub fn set_waveform(&mut self, waveform: Waveform) {
         self.waveform = waveform;
     }
 }
 
 impl AudioNode for NaiveOscillator {
+    /// Computes and returns the next output sample frame.
     fn process(&mut self) -> f32 {
         let phase_increment = self.frequency / self.sample_rate;
         let t = self.phase;
@@ -56,14 +71,21 @@ impl AudioNode for NaiveOscillator {
     }
 }
 
+/// An anti-aliased oscillator using PolyBLEP (Polynomial Band-Limited Step) residual correction.
+/// Recommended for high-frequency synth voices to eliminate digital aliasing noise.
 pub struct PolyBlepOscillator {
+    /// Active sample rate in Hz.
     pub sample_rate: f32,
+    /// Current oscillator frequency in Hz.
     pub frequency: f32,
+    /// Selected waveform.
     pub waveform: Waveform,
+    /// Internal phase accumulator from 0.0 to 1.0.
     phase: f32,
 }
 
 impl PolyBlepOscillator {
+    /// Creates a new `PolyBlepOscillator`.
     pub fn new(sample_rate: f32, frequency: f32, waveform: Waveform) -> Self {
         Self {
             sample_rate,
@@ -73,14 +95,17 @@ impl PolyBlepOscillator {
         }
     }
     
+    /// Updates the oscillator's target frequency.
     pub fn set_frequency(&mut self, frequency: f32) {
         self.frequency = frequency;
     }
 
+    /// Updates the oscillator's waveform.
     pub fn set_waveform(&mut self, waveform: Waveform) {
         self.waveform = waveform;
     }
     
+    /// Calculates the PolyBLEP step correction factor.
     fn poly_blep(t: f32, dt: f32) -> f32 {
         if t < dt {
             let t = t / dt;
@@ -95,6 +120,7 @@ impl PolyBlepOscillator {
 }
 
 impl AudioNode for PolyBlepOscillator {
+    /// Computes and returns the next band-limited sample frame.
     fn process(&mut self) -> f32 {
         let dt = self.frequency / self.sample_rate;
         let t = self.phase;
@@ -116,9 +142,6 @@ impl AudioNode for PolyBlepOscillator {
                 naive + Self::poly_blep(t, dt) - Self::poly_blep(shifted_t, dt)
             }
             Waveform::Triangle => {
-                // Triangle aliasing is much lower amplitude so naive is generally acceptable,
-                // but integrating a polyblep square yields an optimal triangle.
-                // We'll stick to naive here for performance.
                 1.0 - 4.0 * (t - 0.5).abs()
             }
         };

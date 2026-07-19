@@ -10,7 +10,7 @@ def test_aillen(port, sample_path):
     # Set master volume and individual track gains/pans
     client.send_message("/mixer/master/volume", 0.8)
     
-    client.send_message("/track/0/volume", 0.6)
+    client.send_message("/track/0/volume", 0.5)
     client.send_message("/track/0/pan", -0.4) # Synth slightly left
     client.send_message("/track/0/mute", False)
 
@@ -28,31 +28,43 @@ def test_aillen(port, sample_path):
         client.send_message("/track/1/sample/load", sample_path)
         time.sleep(1.0) # Wait for file loading to complete
         
-        print("Starting Loop playback on Track 1...")
+        # Test 1: Standard Resampling
+        print("\n--- Test 1: Resampling Loop ---")
+        client.send_message("/track/1/sample/mode/stretch", 0) # Resample mode
         client.send_message("/track/1/sample/mode", 1) # Loop mode
-        client.send_message("/track/1/note/on", [261.63, 0.9]) # Trigger at root pitch (C4)
-        time.sleep(1.0)
+        client.send_message("/track/1/note/on", [261.63, 0.9])
+        time.sleep(2.0)
+        client.send_message("/track/1/note/off", 261.63)
+        time.sleep(0.5)
 
-    # Play a melody on Track 0 (TwoOp Synth) concurrently!
-    print("\nPlaying synth melody on Track 0 concurrently...")
-    melody = [
-        (220.0, 0.4), # A3
-        (261.63, 0.4), # C4
-        (293.66, 0.4), # D4
-        (329.63, 0.4), # E4
-        (440.0, 0.8), # A4
-    ]
+        # Test 2: Granular Time-Stretching (Half speed, original pitch)
+        print("\n--- Test 2: Granular Time-Stretch (0.5x Speed, 1.0x Pitch) ---")
+        client.send_message("/track/1/sample/mode/stretch", 1) # Granular mode
+        client.send_message("/track/1/sample/grain_size", 40.0) # 40ms grains
+        client.send_message("/track/1/sample/overlap", 4) # 4x overlap
+        client.send_message("/track/1/sample/speed", 0.5) # Half speed
+        client.send_message("/track/1/sample/pitch", 1.0) # Original pitch
+        client.send_message("/track/1/note/on", [261.63, 0.9])
+        time.sleep(3.0)
 
-    for freq, duration in melody:
-        print(f"Playing synth note: {freq} Hz")
-        client.send_message("/track/0/note/on", [freq, 0.8])
-        time.sleep(duration - 0.05)
-        client.send_message("/track/0/note/off", freq)
-        time.sleep(0.05)
+        # Test 3: Play melody on Track 0 concurrently on top of the time-stretched loop!
+        print("\n--- Test 3: Playing synth melody concurrently over time-stretched loop ---")
+        melody = [
+            (220.0, 0.4), # A3
+            (261.63, 0.4), # C4
+            (293.66, 0.4), # D4
+            (329.63, 0.4), # E4
+            (440.0, 0.8), # A4
+        ]
 
-    if sample_path:
-        # Stop the sampler loop after melody finishes
-        print("\nStopping sampler loop on Track 1...")
+        for freq, duration in melody:
+            print(f"Playing synth note: {freq} Hz")
+            client.send_message("/track/0/note/on", [freq, 0.8])
+            time.sleep(duration - 0.05)
+            client.send_message("/track/0/note/off", freq)
+            time.sleep(0.05)
+
+        print("\nStopping loop...")
         client.send_message("/track/1/note/off", 261.63)
         time.sleep(0.5)
 

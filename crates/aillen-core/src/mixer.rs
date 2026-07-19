@@ -2,12 +2,16 @@ use crate::dsp::panner::{Panner, PanMode};
 use crate::synth::two_op::two_op::TwoOpSynth;
 use crate::synth::sampler::Sampler;
 
+/// Represents the set of sound generation instruments supported by Aillen.
 pub enum Instrument {
+    /// Two-Operator FM/AM/RM/Additive Synthesizer.
     TwoOp(TwoOpSynth),
+    /// Polyphonic multi-format sample playback engine.
     Sampler(Sampler),
 }
 
 impl Instrument {
+    /// Processes a single sample frame from the active instrument, returning a stereo pair.
     pub fn process(&mut self) -> (f32, f32) {
         match self {
             Instrument::TwoOp(synth) => {
@@ -21,6 +25,7 @@ impl Instrument {
         }
     }
 
+    /// Triggers a note on the instrument at the specified frequency and velocity.
     pub fn note_on(&mut self, frequency: f32, velocity: f32) {
         match self {
             Instrument::TwoOp(synth) => synth.note_on(frequency, velocity),
@@ -28,6 +33,7 @@ impl Instrument {
         }
     }
 
+    /// Releases a note on the instrument at the specified frequency.
     pub fn note_off(&mut self, frequency: f32) {
         match self {
             Instrument::TwoOp(synth) => synth.note_off(frequency),
@@ -35,6 +41,7 @@ impl Instrument {
         }
     }
 
+    /// Silences all active voices on the instrument immediately.
     pub fn note_off_all(&mut self) {
         match self {
             Instrument::TwoOp(synth) => synth.note_off_all(),
@@ -43,15 +50,22 @@ impl Instrument {
     }
 }
 
+/// A single channel strip hosting an instrument, volume level, stereo panner, and mute option.
 pub struct Track {
+    /// The instrument loaded into this channel.
     pub instrument: Instrument,
+    /// Individual track volume level.
     pub volume: f32,
+    /// Pan position from -1.0 (Hard Left) to 1.0 (Hard Right).
     pub pan: f32,
+    /// The constant-power panner implementation.
     panner: Panner,
+    /// Whether this track is muted.
     pub mute: bool,
 }
 
 impl Track {
+    /// Creates a new track with default volume, center panning, and unmuted state.
     pub fn new(instrument: Instrument) -> Self {
         Self {
             instrument,
@@ -62,19 +76,23 @@ impl Track {
         }
     }
 
+    /// Sets the volume level of this track (clamped to a minimum of 0.0).
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.max(0.0);
     }
 
+    /// Sets the track panning position (clamped to [-1.0, 1.0]).
     pub fn set_pan(&mut self, pan: f32) {
         self.pan = pan.clamp(-1.0, 1.0);
         self.panner.set_pan(self.pan);
     }
 
+    /// Mutes or unmutes this track.
     pub fn set_mute(&mut self, mute: bool) {
         self.mute = mute;
     }
 
+    /// Processes a single stereo audio sample frame from this track, applying volume and pan settings.
     pub fn process(&mut self) -> (f32, f32) {
         if self.mute {
             return (0.0, 0.0);
@@ -89,12 +107,16 @@ impl Track {
     }
 }
 
+/// The stereo master audio mixer containing all tracks and master volume controls.
 pub struct Mixer {
+    /// Fixed-size track list: Track 0 (TwoOp Synth) and Track 1 (Sampler).
     pub tracks: [Track; 2],
+    /// Global master volume level.
     pub master_volume: f32,
 }
 
 impl Mixer {
+    /// Initializes a new Mixer with Track 0 and Track 1 set up for the current sample rate.
     pub fn new(sample_rate: f32, num_voices: usize) -> Self {
         let synth_track = Track::new(Instrument::TwoOp(TwoOpSynth::new(sample_rate, num_voices)));
         let sampler_track = Track::new(Instrument::Sampler(Sampler::new(sample_rate, num_voices)));
@@ -105,10 +127,12 @@ impl Mixer {
         }
     }
 
+    /// Sets the master volume level (clamped to a minimum of 0.0).
     pub fn set_master_volume(&mut self, volume: f32) {
         self.master_volume = volume.max(0.0);
     }
 
+    /// Processes and sums a single stereo output sample frame across all tracks, applying master volume.
     pub fn process(&mut self) -> (f32, f32) {
         let mut out_l = 0.0;
         let mut out_r = 0.0;

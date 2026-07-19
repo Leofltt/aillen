@@ -1,44 +1,199 @@
 use aillen_core::dsp::{filter::FilterType, oscillator::Waveform};
 use aillen_core::synth::two_op::SynthMode;
-use aillen_core::synth::sampler::{PlayMode, load_audio_file};
+use aillen_core::synth::sampler::{PlayMode, load_audio_file, StretchMode};
 use aillen_core::mixer::{Mixer, Instrument};
 use anyhow::Result;
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::Receiver;
 
+/// Message types sent from the OSC server thread to the real-time audio thread.
 pub enum AudioMessage {
-    TrackNoteOn { track_id: usize, freq: f32, vel: f32 },
-    TrackNoteOff { track_id: usize, freq: f32 },
-    TrackNoteOffAll { track_id: usize },
-    TrackTimedNote { track_id: usize, freq: f32, vel: f32, duration_ms: f32 },
+    /// Triggers note start for a specific track.
+    TrackNoteOn { 
+        /// Channel index in the Mixer.
+        track_id: usize, 
+        /// Frequency in Hz.
+        freq: f32, 
+        /// Note velocity gain (0.0 to 1.0).
+        vel: f32 
+    },
+    /// Triggers note release for a specific track.
+    TrackNoteOff { 
+        /// Channel index in the Mixer.
+        track_id: usize, 
+        /// Frequency in Hz.
+        freq: f32 
+    },
+    /// Silences all active notes on a specific track immediately.
+    TrackNoteOffAll { 
+        /// Channel index in the Mixer.
+        track_id: usize 
+    },
+    /// Plays a timed note (triggers on, then silences after duration_ms).
+    TrackTimedNote { 
+        /// Channel index in the Mixer.
+        track_id: usize, 
+        /// Frequency in Hz.
+        freq: f32, 
+        /// Note velocity gain.
+        vel: f32, 
+        /// Duration of the note in milliseconds.
+        duration_ms: f32 
+    },
     
     // TwoOp specific
-    TwoOpSetLegato { enabled: bool },
-    TwoOpSetRealtimeUpdate { enabled: bool },
-    TwoOpSetMode { mode: SynthMode },
-    TwoOpSetOsc1Waveform { waveform: Waveform },
-    TwoOpSetOsc2Waveform { waveform: Waveform },
-    TwoOpSetOsc1Adsr { a: f32, d: f32, s: f32, r: f32 },
-    TwoOpSetOsc2Adsr { a: f32, d: f32, s: f32, r: f32 },
-    TwoOpSetFilterAdsr { a: f32, d: f32, s: f32, r: f32 },
-    TwoOpSetFilterParams { cutoff: f32, q: f32, filter_type: FilterType },
-    TwoOpSetFilterMod { enabled: bool, amount: f32 },
-    TwoOpSetModulationParams { index: f32, ratio: f32, detune: f32 },
+    /// Sets Legato mode on the TwoOp synth (Track 0).
+    TwoOpSetLegato { 
+        /// Legato toggle state.
+        enabled: bool 
+    },
+    /// Sets real-time parameter updating on active notes for the TwoOp synth.
+    TwoOpSetRealtimeUpdate { 
+        /// Toggle state.
+        enabled: bool 
+    },
+    /// Sets the active synthesis mode for the TwoOp synth.
+    TwoOpSetMode { 
+        /// Synthesis algorithm.
+        mode: SynthMode 
+    },
+    /// Sets the waveform of Operator 1 (Carrier) for the TwoOp synth.
+    TwoOpSetOsc1Waveform { 
+        /// Target waveform.
+        waveform: Waveform 
+    },
+    /// Sets the waveform of Operator 2 (Modulator) for the TwoOp synth.
+    TwoOpSetOsc2Waveform { 
+        /// Target waveform.
+        waveform: Waveform 
+    },
+    /// Sets Operator 1 ADSR envelope parameters.
+    TwoOpSetOsc1Adsr { 
+        /// Attack time in seconds.
+        a: f32, 
+        /// Decay time in seconds.
+        d: f32, 
+        /// Sustain level amplitude.
+        s: f32, 
+        /// Release time in seconds.
+        r: f32 
+    },
+    /// Sets Operator 2 ADSR envelope parameters.
+    TwoOpSetOsc2Adsr { 
+        /// Attack time in seconds.
+        a: f32, 
+        /// Decay time in seconds.
+        d: f32, 
+        /// Sustain level amplitude.
+        s: f32, 
+        /// Release time in seconds.
+        r: f32 
+    },
+    /// Sets Filter Cutoff ADSR envelope parameters.
+    TwoOpSetFilterAdsr { 
+        /// Attack time in seconds.
+        a: f32, 
+        /// Decay time in seconds.
+        d: f32, 
+        /// Sustain level amplitude.
+        s: f32, 
+        /// Release time in seconds.
+        r: f32 
+    },
+    /// Sets biquad filter properties.
+    TwoOpSetFilterParams { 
+        /// Base cutoff frequency in Hz.
+        cutoff: f32, 
+        /// Filter resonance Q-factor.
+        q: f32, 
+        /// Biquad filter type.
+        filter_type: FilterType 
+    },
+    /// Enables/disables filter cutoff envelope modulation and sets its depth.
+    TwoOpSetFilterMod { 
+        /// Toggle state.
+        enabled: bool, 
+        /// Modulation depth in Hz.
+        amount: f32 
+    },
+    /// Sets modulator synthesis properties.
+    TwoOpSetModulationParams { 
+        /// Modulation index.
+        index: f32, 
+        /// Modulator frequency ratio relative to Carrier.
+        ratio: f32, 
+        /// Modulator detuning in Hz.
+        detune: f32 
+    },
 
     // Sampler specific
-    SamplerLoadSample { path: String },
-    SamplerSetPlayMode { mode: PlayMode },
-    SamplerSetPitchRatio { ratio: f32 },
-    SamplerSetSpeedRatio { ratio: f32 },
+    /// Loads an audio file into the Sampler (Track 1) buffer.
+    SamplerLoadSample { 
+        /// Path to the audio file on disk.
+        path: String 
+    },
+    /// Sets the Sampler playback mode.
+    SamplerSetPlayMode { 
+        /// Playback mode (OneShot or Loop).
+        mode: PlayMode 
+    },
+    /// Sets the Sampler pitch ratio factor.
+    SamplerSetPitchRatio { 
+        /// Pitch scaling multiplier.
+        ratio: f32 
+    },
+    /// Sets the Sampler playback speed ratio factor.
+    SamplerSetSpeedRatio { 
+        /// Speed scaling multiplier.
+        ratio: f32 
+    },
+    /// Sets the Sampler time-stretching engine mode.
+    SamplerSetStretchMode { 
+        /// Decoupled granular or linked resampler mode.
+        mode: StretchMode 
+    },
+    /// Sets Sampler grain duration size in milliseconds.
+    SamplerSetGrainSize { 
+        /// Grain duration.
+        size_ms: f32 
+    },
+    /// Sets Sampler overlapping grains count.
+    SamplerSetOverlap { 
+        /// Overlapping grains.
+        overlap: usize 
+    },
 
     // Mixer settings
-    SetTrackVolume { track_id: usize, volume: f32 },
-    SetTrackPan { track_id: usize, pan: f32 },
-    SetTrackMute { track_id: usize, mute: bool },
-    SetMasterVolume { volume: f32 },
+    /// Sets the volume gain of a specific track.
+    SetTrackVolume { 
+        /// Track index.
+        track_id: usize, 
+        /// Volume gain.
+        volume: f32 
+    },
+    /// Sets the panning of a specific track.
+    SetTrackPan { 
+        /// Track index.
+        track_id: usize, 
+        /// Panning value from -1.0 to 1.0.
+        pan: f32 
+    },
+    /// Mutes or unmutes a specific track.
+    SetTrackMute { 
+        /// Track index.
+        track_id: usize, 
+        /// Mute state.
+        mute: bool 
+    },
+    /// Sets the global master output volume gain.
+    SetMasterVolume { 
+        /// Master volume gain.
+        volume: f32 
+    },
 }
 
+/// Lists all available host audio output devices and their indices.
 pub fn list_audio_devices() -> Result<()> {
     let host = cpal::default_host();
     let devices = host.output_devices()?;
@@ -49,6 +204,7 @@ pub fn list_audio_devices() -> Result<()> {
     Ok(())
 }
 
+/// Spawns the real-time audio thread, setting up CPAL output stream and routing messages.
 pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_index: Option<usize>) -> Result<cpal::Stream> {
     let host = cpal::default_host();
     
@@ -106,8 +262,6 @@ pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_
                                         }
                                         Instrument::Sampler(sampler) => {
                                             sampler.note_on(freq, vel);
-                                            // Trigger note off later? (A simple timeout is currently handled by the synth voice,
-                                            // for Sampler a TimedNote is currently mapped to standard NoteOn).
                                         }
                                     }
                                 }
@@ -194,6 +348,21 @@ pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_
                             AudioMessage::SamplerSetSpeedRatio { ratio } => {
                                 if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
                                     sampler.set_speed_ratio(ratio);
+                                }
+                            }
+                            AudioMessage::SamplerSetStretchMode { mode } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_stretch_mode(mode);
+                                }
+                            }
+                            AudioMessage::SamplerSetGrainSize { size_ms } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_grain_size(size_ms);
+                                }
+                            }
+                            AudioMessage::SamplerSetOverlap { overlap } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_overlap(overlap);
                                 }
                             }
                             AudioMessage::SetTrackVolume { track_id, volume } => {

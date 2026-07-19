@@ -15,7 +15,6 @@ pub enum PanMode {
     
     /// Mid/Side-style linear panning (Constant Amplitude).
     /// Sum of L + R is constant across the pan range.
-    /// Can be formulated as M = Input, S = Input * Pan, with L = (M-S)/2, R = (M+S)/2.
     MidSide,
 }
 
@@ -48,25 +47,20 @@ impl Panner {
 
     /// Returns the (Left, Right) gains based on current pan and mode.
     pub fn get_gains(&self) -> (f32, f32) {
-        // normalized_pan: 0.0 (Hard Left) to 1.0 (Hard Right)
         let normalized_pan = (self.pan + 1.0) * 0.5;
 
         match self.mode {
             PanMode::ConstantPowerSin => {
-                // L = cos(normalized_pan * PI/2), R = sin(normalized_pan * PI/2)
                 let left_gain = ((1.0 - normalized_pan) * FRAC_PI_2).sin();
                 let right_gain = (normalized_pan * FRAC_PI_2).sin();
                 (left_gain, right_gain)
             }
             PanMode::ConstantPowerSqrt => {
-                // L = sqrt(1.0 - x), R = sqrt(x)
                 let left_gain = (1.0 - normalized_pan).sqrt();
                 let right_gain = normalized_pan.sqrt();
                 (left_gain, right_gain)
             }
             PanMode::MidSide => {
-                // Linear / Constant Amplitude panning.
-                // Center is -6dB (0.5 amplitude) per channel.
                 let left_gain = 1.0 - normalized_pan;
                 let right_gain = normalized_pan;
                 (left_gain, right_gain)
@@ -82,6 +76,7 @@ impl Panner {
 }
 
 impl StereoProcessor for Panner {
+    /// Positions a stereo input using pan-balance gains.
     fn process_stereo(&mut self, left: f32, right: f32) -> (f32, f32) {
         let (left_gain, right_gain) = self.get_gains();
         (left * left_gain, right * right_gain)
@@ -96,7 +91,6 @@ mod tests {
     fn test_panner_center() {
         let panner = Panner::new(0.0, PanMode::ConstantPowerSin);
         let (l, r) = panner.process(1.0);
-        // Center for constant power should be ~0.707 (-3dB)
         assert!((l - 0.70710677).abs() < 1e-6);
         assert!((r - 0.70710677).abs() < 1e-6);
     }
@@ -129,7 +123,6 @@ mod tests {
     fn test_panner_midside_center() {
         let panner = Panner::new(0.0, PanMode::MidSide);
         let (l, r) = panner.process(1.0);
-        // MidSide (Linear) center should be 0.5 (-6dB)
         assert!((l - 0.5).abs() < 1e-6);
         assert!((r - 0.5).abs() < 1e-6);
     }
