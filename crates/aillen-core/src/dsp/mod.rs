@@ -2,6 +2,11 @@ pub mod oscillator;
 pub mod filter;
 pub mod envelope;
 pub mod panner;
+pub mod compressor;
+pub mod am_ring_mod;
+
+pub use compressor::Compressor;
+pub use am_ring_mod::{AmRingMod, ModulationSource};
 
 /// A trait for generating or processing a single frame of audio data.
 pub trait AudioNode {

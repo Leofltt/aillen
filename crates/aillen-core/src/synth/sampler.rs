@@ -145,6 +145,18 @@ pub fn load_audio_file<P: AsRef<Path>>(path: P) -> Result<SampleBuffer, anyhow::
         }
     }
     
+    // Peak normalization
+    let mut peak = 0.0f32;
+    for &sample in &data {
+        peak = peak.max(sample.abs());
+    }
+    if peak > 0.0 {
+        let gain = 1.0 / peak;
+        for sample in &mut data {
+            *sample *= gain;
+        }
+    }
+
     Ok(SampleBuffer {
         data,
         channels,
@@ -203,6 +215,22 @@ pub struct SamplerVoice {
     grains: [Grain; 16],
     /// Timer determining when to spawn the next grain.
     grain_spawn_timer: f32,
+    /// Linear congruential generator state.
+    rng_seed: u32,
+
+    /// Whether slicing mode is enabled.
+    pub slice_mode: bool,
+    /// Total number of slices (e.g. 16).
+    pub num_slices: usize,
+    /// Selected active slice index.
+    pub selected_slice: usize,
+    /// Number of stutter repeats.
+    pub stutter_count: usize,
+
+    // Internal slice boundaries
+    slice_start: f64,
+    sub_slice_len: f64,
+    stutter_index: usize,
 }
 
 impl SamplerVoice {
@@ -223,7 +251,51 @@ impl SamplerVoice {
             overlap: 4,
             grains: [Grain::default(); 16],
             grain_spawn_timer: 999999.0, // Force spawn immediately on start
+            rng_seed: 123456789,
+            slice_mode: false,
+            num_slices: 16,
+            selected_slice: 0,
+            stutter_count: 1,
+            slice_start: 0.0,
+            sub_slice_len: 0.0,
+            stutter_index: 0,
         }
+    }
+
+    /// Returns a pseudo-random float between 0.0 and 1.0 using a fast LCG.
+    fn next_random(&mut self) -> f32 {
+        self.rng_seed = self.rng_seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        (self.rng_seed as f32) / (u32::MAX as f32)
+    }
+
+    /// Finds the closest zero-crossing point in a window around target_frame.
+    fn find_closest_zero_crossing(&self, data: &[f32], target_frame: usize, channels: usize, window: usize) -> usize {
+        let num_frames = data.len() / channels;
+        if num_frames == 0 {
+            return 0;
+        }
+        
+        let mut best_frame = target_frame;
+        let mut min_abs = f32::MAX;
+        
+        let start_search = target_frame.saturating_sub(window);
+        let end_search = (target_frame + window).min(num_frames);
+        
+        for frame in start_search..end_search {
+            let mut sum_abs = 0.0;
+            for c in 0..channels {
+                sum_abs += data[frame * channels + c].abs();
+            }
+            let avg_abs = sum_abs / channels as f32;
+            if avg_abs < min_abs {
+                min_abs = avg_abs;
+                best_frame = frame;
+                if min_abs == 0.0 {
+                    break;
+                }
+            }
+        }
+        best_frame
     }
 
     /// Sets the shared sample buffer for this voice.
@@ -236,13 +308,29 @@ impl SamplerVoice {
         self.triggered_freq = frequency;
         self.velocity = velocity;
         self.phase = 0.0;
+        self.stutter_index = 0;
         
         for grain in &mut self.grains {
             grain.active = false;
         }
         
         if let Some(ref buffer) = self.sample_buffer {
-            let grain_size_samples = (self.grain_size_ms / 1000.0) * buffer.sample_rate;
+            let original_sample_rate = buffer.sample_rate;
+            let num_frames = buffer.data.len() / buffer.channels;
+            
+            if self.slice_mode && num_frames > 0 {
+                let slice_len = num_frames as f64 / self.num_slices.max(1) as f64;
+                let target_start = (self.selected_slice.min(self.num_slices - 1) as f64 * slice_len) as usize;
+                let adjusted_start = self.find_closest_zero_crossing(&buffer.data, target_start, buffer.channels, 1000);
+                self.slice_start = adjusted_start as f64;
+                self.sub_slice_len = slice_len / self.stutter_count.max(1) as f64;
+                self.phase = self.slice_start;
+            } else {
+                self.slice_start = 0.0;
+                self.sub_slice_len = num_frames as f64;
+            }
+
+            let grain_size_samples = (self.grain_size_ms / 1000.0) * original_sample_rate;
             let spawn_interval = grain_size_samples / self.overlap.max(1) as f32;
             self.grain_spawn_timer = spawn_interval;
         }
@@ -260,7 +348,7 @@ impl SamplerVoice {
     /// Generates a single stereo frame of sample playback.
     pub fn process(&mut self) -> (f32, f32) {
         let buffer = match &self.sample_buffer {
-            Some(b) if self.active => b,
+            Some(b) if self.active => Arc::clone(b),
             _ => return (0.0, 0.0),
         };
 
@@ -320,13 +408,25 @@ impl SamplerVoice {
 
                 self.phase += phase_increment;
 
-                if self.phase >= num_frames as f64 {
-                    match self.play_mode {
-                        PlayMode::Loop => {
-                            self.phase -= num_frames as f64;
-                        }
-                        PlayMode::OneShot => {
+                if self.slice_mode {
+                    let sub_slice_end = self.slice_start + (self.stutter_index + 1) as f64 * self.sub_slice_len;
+                    if self.phase >= sub_slice_end {
+                        self.stutter_index += 1;
+                        if self.stutter_index >= self.stutter_count {
                             self.active = false;
+                        } else {
+                            self.phase = self.slice_start;
+                        }
+                    }
+                } else {
+                    if self.phase >= num_frames as f64 {
+                        match self.play_mode {
+                            PlayMode::Loop => {
+                                self.phase -= num_frames as f64;
+                            }
+                            PlayMode::OneShot => {
+                                self.active = false;
+                            }
                         }
                     }
                 }
@@ -343,15 +443,22 @@ impl SamplerVoice {
                     self.grain_spawn_timer = 0.0;
                     
                     let can_spawn = match self.play_mode {
-                        PlayMode::Loop => true,
-                        PlayMode::OneShot => self.phase < num_frames as f64,
+                        PlayMode::Loop => !self.slice_mode || self.stutter_index < self.stutter_count,
+                        PlayMode::OneShot => self.phase < num_frames as f64 && (!self.slice_mode || self.stutter_index < self.stutter_count),
                     };
 
                     if can_spawn {
+                        let random_val = self.next_random() * 2.0 - 1.0; // -1.0 to 1.0
                         if let Some(grain) = self.grains.iter_mut().find(|g| !g.active) {
                             grain.active = true;
                             grain.phase = 0.0;
-                            grain.source_start = self.phase;
+                            
+                            // Add a small start time jitter to reduce phasiness / periodic interference
+                            let jitter_range_ms = 3.0; // +/- 3ms of jitter
+                            let jitter_samples = (jitter_range_ms / 1000.0) * original_sample_rate;
+                            let jitter = (random_val * jitter_samples) as f64;
+                            
+                            grain.source_start = (self.phase + jitter).clamp(0.0, num_frames.saturating_sub(1) as f64);
                         }
                     }
                 }
@@ -424,14 +531,28 @@ impl SamplerVoice {
                 let playhead_inc = (original_sample_rate as f64 / self.sample_rate as f64) * self.speed_ratio as f64;
                 self.phase += playhead_inc;
 
-                if self.phase >= num_frames as f64 {
-                    match self.play_mode {
-                        PlayMode::Loop => {
-                            self.phase -= num_frames as f64;
-                        }
-                        PlayMode::OneShot => {
+                if self.slice_mode {
+                    let sub_slice_end = self.slice_start + (self.stutter_index + 1) as f64 * self.sub_slice_len;
+                    if self.phase >= sub_slice_end {
+                        self.stutter_index += 1;
+                        if self.stutter_index >= self.stutter_count {
                             if active_grains_count == 0 {
                                 self.active = false;
+                            }
+                        } else {
+                            self.phase = self.slice_start;
+                        }
+                    }
+                } else {
+                    if self.phase >= num_frames as f64 {
+                        match self.play_mode {
+                            PlayMode::Loop => {
+                                self.phase -= num_frames as f64;
+                            }
+                            PlayMode::OneShot => {
+                                if active_grains_count == 0 {
+                                    self.active = false;
+                                }
                             }
                         }
                     }
@@ -468,6 +589,15 @@ pub struct Sampler {
     pub dj_filter_l: DjFilter,
     /// Stereo DJ performance filter right channel.
     pub dj_filter_r: DjFilter,
+
+    /// Slicing mode active state.
+    pub slice_mode: bool,
+    /// Total slices to divide the buffer into.
+    pub num_slices: usize,
+    /// Currently selected slice index.
+    pub selected_slice: usize,
+    /// Stutter count repeats.
+    pub stutter_count: usize,
 }
 
 impl Sampler {
@@ -489,6 +619,10 @@ impl Sampler {
             overlap: 4,
             dj_filter_l: DjFilter::new(sample_rate),
             dj_filter_r: DjFilter::new(sample_rate),
+            slice_mode: false,
+            num_slices: 16,
+            selected_slice: 0,
+            stutter_count: 1,
         }
     }
 
@@ -549,6 +683,38 @@ impl Sampler {
         }
     }
 
+    /// Enables or disables slicing mode.
+    pub fn set_slice_mode(&mut self, enabled: bool) {
+        self.slice_mode = enabled;
+        for voice in &mut self.voices {
+            voice.slice_mode = enabled;
+        }
+    }
+
+    /// Sets the total number of slices.
+    pub fn set_num_slices(&mut self, n: usize) {
+        self.num_slices = n.max(1);
+        for voice in &mut self.voices {
+            voice.num_slices = self.num_slices;
+        }
+    }
+
+    /// Sets the selected slice index.
+    pub fn set_selected_slice(&mut self, slice: usize) {
+        self.selected_slice = slice;
+        for voice in &mut self.voices {
+            voice.selected_slice = slice;
+        }
+    }
+
+    /// Sets the stutter count.
+    pub fn set_stutter_count(&mut self, count: usize) {
+        self.stutter_count = count.max(1);
+        for voice in &mut self.voices {
+            voice.stutter_count = self.stutter_count;
+        }
+    }
+
     /// Triggers note playback. Attempts to find a free voice or steals voice 0.
     pub fn note_on(&mut self, frequency: f32, velocity: f32) {
         if let Some(voice) = self.voices.iter_mut().find(|v| !v.active) {
@@ -558,6 +724,10 @@ impl Sampler {
             voice.stretch_mode = self.stretch_mode;
             voice.grain_size_ms = self.grain_size_ms;
             voice.overlap = self.overlap;
+            voice.slice_mode = self.slice_mode;
+            voice.num_slices = self.num_slices;
+            voice.selected_slice = self.selected_slice;
+            voice.stutter_count = self.stutter_count;
             voice.note_on(frequency, velocity);
         } else {
             let voice = &mut self.voices[0];
@@ -567,6 +737,10 @@ impl Sampler {
             voice.stretch_mode = self.stretch_mode;
             voice.grain_size_ms = self.grain_size_ms;
             voice.overlap = self.overlap;
+            voice.slice_mode = self.slice_mode;
+            voice.num_slices = self.num_slices;
+            voice.selected_slice = self.selected_slice;
+            voice.stutter_count = self.stutter_count;
             voice.note_on(frequency, velocity);
         }
     }
@@ -667,5 +841,28 @@ mod tests {
             }
         }
         assert!(produced_audio);
+    }
+
+    #[test]
+    fn test_sampler_slice_stutter() {
+        let mut voice = SamplerVoice::new(44100.0);
+        voice.slice_mode = true;
+        voice.num_slices = 4;
+        voice.selected_slice = 1;
+        voice.stutter_count = 2;
+
+        let buffer = SampleBuffer {
+            data: vec![0.5; 1000],
+            channels: 1,
+            sample_rate: 44100.0,
+        };
+        voice.set_sample(Arc::new(buffer));
+        voice.note_on(261.63, 1.0);
+
+        assert!(voice.active);
+        
+        let (l, r) = voice.process();
+        assert_eq!(l, 0.5);
+        assert_eq!(r, 0.5);
     }
 }

@@ -202,6 +202,26 @@ pub enum AudioMessage {
         /// Position from -1.0 to 1.0.
         position: f32
     },
+    /// Enables/disables slice playback mode.
+    SamplerSetSliceMode {
+        /// Toggle state.
+        enabled: bool
+    },
+    /// Sets the total number of slices.
+    SamplerSetNumSlices {
+        /// Number of slices.
+        n: usize
+    },
+    /// Selects the active slice index.
+    SamplerSetSelectedSlice {
+        /// Slice index.
+        slice: usize
+    },
+    /// Sets the stutter repetitions count.
+    SamplerSetStutterCount {
+        /// Repeat count.
+        count: usize
+    },
     /// Sets the Mixer master output DJ performance filter position.
     MixerSetMasterFilter {
         /// Position from -1.0 to 1.0.
@@ -411,6 +431,26 @@ pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_
                             AudioMessage::SamplerSetDjFilter { position } => {
                                 if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
                                     sampler.set_dj_filter_position(position);
+                                }
+                            }
+                            AudioMessage::SamplerSetSliceMode { enabled } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_slice_mode(enabled);
+                                }
+                            }
+                            AudioMessage::SamplerSetNumSlices { n } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_num_slices(n);
+                                }
+                            }
+                            AudioMessage::SamplerSetSelectedSlice { slice } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_selected_slice(slice);
+                                }
+                            }
+                            AudioMessage::SamplerSetStutterCount { count } => {
+                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
+                                    sampler.set_stutter_count(count);
                                 }
                             }
                             AudioMessage::MixerSetMasterFilter { position } => {

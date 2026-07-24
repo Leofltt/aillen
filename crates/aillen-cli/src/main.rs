@@ -306,6 +306,35 @@ fn handle_osc_message(msg: OscMessage, prod: &Sender<AudioMessage>, bank: &Sampl
                             let _ = prod.try_send(AudioMessage::SamplerSetDjFilter { position: pos });
                         }
                     }
+                    "sample/slice/mode" if track_id == 1 => {
+                        if let Some(arg) = msg.args.get(0) {
+                            let enabled = match arg {
+                                rosc::OscType::Bool(b) => *b,
+                                rosc::OscType::Int(i) => *i > 0,
+                                rosc::OscType::Float(f) => *f > 0.5,
+                                _ => false,
+                            };
+                            let _ = prod.try_send(AudioMessage::SamplerSetSliceMode { enabled });
+                        }
+                    }
+                    "sample/slice/count" if track_id == 1 => {
+                        if let Some(arg) = msg.args.get(0) {
+                            let n = arg.clone().int().unwrap_or(16) as usize;
+                            let _ = prod.try_send(AudioMessage::SamplerSetNumSlices { n });
+                        }
+                    }
+                    "sample/slice/select" if track_id == 1 => {
+                        if let Some(arg) = msg.args.get(0) {
+                            let slice = arg.clone().int().unwrap_or(0) as usize;
+                            let _ = prod.try_send(AudioMessage::SamplerSetSelectedSlice { slice });
+                        }
+                    }
+                    "sample/slice/stutter" if track_id == 1 => {
+                        if let Some(arg) = msg.args.get(0) {
+                            let count = arg.clone().int().unwrap_or(1) as usize;
+                            let _ = prod.try_send(AudioMessage::SamplerSetStutterCount { count });
+                        }
+                    }
                     _ => {}
                 }
             }
