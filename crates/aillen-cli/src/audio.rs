@@ -1,7 +1,9 @@
-use aillen_core::dsp::{filter::FilterType, oscillator::Waveform};
+use aillen_core::dsp::{filter::FilterType, oscillator::Waveform, ModulationSource, DelayMode};
 use aillen_core::synth::two_op::SynthMode;
 use aillen_core::synth::sampler::{PlayMode, load_audio_file, StretchMode};
-use aillen_core::mixer::{Mixer, Instrument};
+use aillen_core::mixer::Mixer;
+use aillen_core::synth::two_op::two_op::TwoOpSynth;
+use aillen_core::synth::sampler::Sampler;
 use anyhow::Result;
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -227,6 +229,32 @@ pub enum AudioMessage {
         /// Position from -1.0 to 1.0.
         position: f32
     },
+    
+    // FxChain & Return Track settings
+    SetTrackSendDelay { track_id: usize, send: f32 },
+    SetTrackRmDepth { track_id: usize, depth: f32 },
+    SetTrackRmFreq { track_id: usize, freq: f32 },
+    SetTrackRmMode { track_id: usize, ring_mod: bool },
+    SetTrackRmSource { track_id: usize, source: usize },
+    SetTrackFxFilterPos { track_id: usize, pos: f32 },
+    SetTrackCompThreshold { track_id: usize, thresh: f32 },
+    SetTrackCompRatio { track_id: usize, ratio: f32 },
+    SetTrackCompAttack { track_id: usize, attack: f32 },
+    SetTrackCompRelease { track_id: usize, release: f32 },
+    SetTrackCompMakeup { track_id: usize, makeup: f32 },
+    SetReturnDelayTime { time: f32 },
+    SetReturnDelayFeedback { feedback: f32 },
+    SetReturnDelayMode { mode: usize },
+    SetReturnDelayPingPong { enabled: bool },
+    SetReturnDelayDrive { drive: f32 },
+    SetReturnDelayGrainSize { size: f32 },
+    SetReturnDelayDensity { density: usize },
+    SetReturnDelaySpray { spray: f32 },
+    SetReturnDelayPitch { pitch: f32 },
+    SetTrackCompSidechain { track_id: usize, enabled: bool },
+    SetMasterWlDrop { drop: usize },
+    SetMasterWlOutof { outof: usize },
+    SetMasterWlMode { mode: usize },
 }
 
 /// Lists all available host audio output devices and their indices.
@@ -292,169 +320,334 @@ pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_
                             }
                             AudioMessage::TrackTimedNote { track_id, freq, vel, duration_ms } => {
                                 if track_id < mixer.tracks.len() {
-                                    match &mut mixer.tracks[track_id].instrument {
-                                        Instrument::TwoOp(two_op) => {
-                                            two_op.trigger_note(freq, vel, duration_ms);
-                                        }
-                                        Instrument::Sampler(sampler) => {
-                                            sampler.note_on(freq, vel);
-                                        }
-                                    }
-                                }
-                            }
-                            AudioMessage::TwoOpSetLegato { enabled } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_legato(enabled);
-                                }
-                            }
-                            AudioMessage::TwoOpSetRealtimeUpdate { enabled } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_realtime_update(enabled);
-                                }
-                            }
-                            AudioMessage::TwoOpSetMode { mode } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_mode(mode);
-                                }
-                            }
-                            AudioMessage::TwoOpSetOsc1Waveform { waveform } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_osc1_waveform(waveform);
-                                }
-                            }
-                            AudioMessage::TwoOpSetOsc2Waveform { waveform } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_osc2_waveform(waveform);
-                                }
-                            }
-                            AudioMessage::TwoOpSetOsc1Adsr { a, d, s, r } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_osc1_adsr(a, d, s, r);
-                                }
-                            }
-                            AudioMessage::TwoOpSetOsc2Adsr { a, d, s, r } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_osc2_adsr(a, d, s, r);
-                                }
-                            }
-                            AudioMessage::TwoOpSetFilterAdsr { a, d, s, r } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_filter_adsr(a, d, s, r);
-                                }
-                            }
-                            AudioMessage::TwoOpSetFilterParams { cutoff, q, filter_type } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_filter_params(cutoff, q, filter_type);
-                                }
-                            }
-                            AudioMessage::TwoOpSetFilterMod { enabled, amount } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_filter_mod(enabled, amount);
-                                }
-                            }
-                            AudioMessage::TwoOpSetModulationParams { index, ratio, detune } => {
-                                if let Instrument::TwoOp(synth) = &mut mixer.tracks[0].instrument {
-                                    synth.set_modulation_params(index, ratio, detune);
-                                }
-                            }
-                            AudioMessage::SamplerLoadSample { path } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    println!("Loading sample from path: {}", path);
-                                    match load_audio_file(&path) {
-                                        Ok(buf) => {
-                                            sampler.set_sample(buf);
-                                            println!("Sample loaded successfully!");
-                                        }
-                                        Err(e) => {
-                                            eprintln!("Failed to load sample file: {:?}", e);
-                                        }
-                                    }
-                                }
-                            }
-                            AudioMessage::SamplerSetPlayMode { mode } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_play_mode(mode);
-                                }
-                            }
-                            AudioMessage::SamplerSetPitchRatio { ratio } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_pitch_ratio(ratio);
-                                }
-                            }
-                            AudioMessage::SamplerSetSpeedRatio { ratio } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_speed_ratio(ratio);
-                                }
-                            }
-                            AudioMessage::SamplerSetStretchMode { mode } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_stretch_mode(mode);
-                                }
-                            }
-                            AudioMessage::SamplerSetGrainSize { size_ms } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_grain_size(size_ms);
-                                }
-                            }
-                            AudioMessage::SamplerSetOverlap { overlap } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_overlap(overlap);
-                                }
-                            }
-                            AudioMessage::SamplerLoadBuffer { buffer } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.sample_buffer = Some(buffer.clone());
-                                    for voice in &mut sampler.voices {
-                                        voice.sample_buffer = Some(buffer.clone());
-                                    }
-                                    println!("Sampler: Switched to preloaded buffer from SampleBank!");
-                                }
-                            }
-                            AudioMessage::SetTrackVolume { track_id, volume } => {
-                                if track_id < mixer.tracks.len() {
-                                    mixer.tracks[track_id].set_volume(volume);
-                                }
-                            }
-                            AudioMessage::SetTrackPan { track_id, pan } => {
-                                if track_id < mixer.tracks.len() {
-                                    mixer.tracks[track_id].set_pan(pan);
-                                }
-                            }
-                            AudioMessage::SetTrackMute { track_id, mute } => {
-                                if track_id < mixer.tracks.len() {
-                                    mixer.tracks[track_id].set_mute(mute);
-                                }
-                            }
-                            AudioMessage::SetMasterVolume { volume } => {
-                                mixer.set_master_volume(volume);
-                            }
-                            AudioMessage::SamplerSetDjFilter { position } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_dj_filter_position(position);
-                                }
-                            }
-                            AudioMessage::SamplerSetSliceMode { enabled } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_slice_mode(enabled);
-                                }
-                            }
-                            AudioMessage::SamplerSetNumSlices { n } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_num_slices(n);
-                                }
-                            }
-                            AudioMessage::SamplerSetSelectedSlice { slice } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_selected_slice(slice);
-                                }
-                            }
-                            AudioMessage::SamplerSetStutterCount { count } => {
-                                if let Instrument::Sampler(sampler) = &mut mixer.tracks[1].instrument {
-                                    sampler.set_stutter_count(count);
-                                }
-                            }
+                                     if let Some(two_op) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                         two_op.trigger_note(freq, vel, duration_ms);
+                                     } else if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                         sampler.note_on(freq, vel);
+                                     }
+                                 }
+                             }
+                              AudioMessage::TwoOpSetLegato { enabled } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_legato(enabled);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetRealtimeUpdate { enabled } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_realtime_update(enabled);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetMode { mode } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_mode(mode);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetOsc1Waveform { waveform } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_osc1_waveform(waveform);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetOsc2Waveform { waveform } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_osc2_waveform(waveform);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetOsc1Adsr { a, d, s, r } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_osc1_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetOsc2Adsr { a, d, s, r } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_osc2_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetFilterAdsr { a, d, s, r } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_filter_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetFilterParams { cutoff, q, filter_type } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_filter_params(cutoff, q, filter_type);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetFilterMod { enabled, amount } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_filter_mod(enabled, amount);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetModulationParams { index, ratio, detune } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_modulation_params(index, ratio, detune);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerLoadSample { path } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          println!("Loading sample from path: {}", path);
+                                          match load_audio_file(&path) {
+                                              Ok(buf) => {
+                                                  sampler.set_sample(buf);
+                                                  println!("Sample loaded successfully!");
+                                              }
+                                              Err(e) => {
+                                                  eprintln!("Failed to load sample file: {:?}", e);
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetPlayMode { mode } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_play_mode(mode);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetPitchRatio { ratio } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_pitch_ratio(ratio);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetSpeedRatio { ratio } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_speed_ratio(ratio);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetStretchMode { mode } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_stretch_mode(mode);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetGrainSize { size_ms } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_grain_size(size_ms);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetOverlap { overlap } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_overlap(overlap);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerLoadBuffer { buffer } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.sample_buffer = Some(buffer.clone());
+                                          for voice in &mut sampler.voices {
+                                              voice.sample_buffer = Some(buffer.clone());
+                                          }
+                                          println!("Sampler: Switched to preloaded buffer from SampleBank!");
+                                      }
+                                  }
+                              }
+                             AudioMessage::SetTrackVolume { track_id, volume } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].set_volume(volume);
+                                 }
+                             }
+                             AudioMessage::SetTrackPan { track_id, pan } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].set_pan(pan);
+                                 }
+                             }
+                             AudioMessage::SetTrackMute { track_id, mute } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].set_mute(mute);
+                                 }
+                             }
+                             AudioMessage::SetMasterVolume { volume } => {
+                                 mixer.set_master_volume(volume);
+                             }
+                              AudioMessage::SamplerSetDjFilter { position } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_dj_filter_position(position);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetSliceMode { enabled } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_slice_mode(enabled);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetNumSlices { n } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_num_slices(n);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetSelectedSlice { slice } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_selected_slice(slice);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SamplerSetStutterCount { count } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          sampler.set_stutter_count(count);
+                                      }
+                                  }
+                              }
                             AudioMessage::MixerSetMasterFilter { position } => {
                                 mixer.set_master_filter_position(position);
+                            }
+                            AudioMessage::SetTrackSendDelay { track_id, send } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].send_delay = send;
+                                }
+                            }
+                            AudioMessage::SetTrackRmDepth { track_id, depth } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.ring_mod_l.depth = depth;
+                                    mixer.tracks[track_id].fx_chain.ring_mod_r.depth = depth;
+                                }
+                            }
+                            AudioMessage::SetTrackRmFreq { track_id, freq } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.ring_mod_l.frequency = freq;
+                                    mixer.tracks[track_id].fx_chain.ring_mod_r.frequency = freq;
+                                }
+                            }
+                            AudioMessage::SetTrackRmMode { track_id, ring_mod } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.ring_mod_l.ring_mod = ring_mod;
+                                    mixer.tracks[track_id].fx_chain.ring_mod_r.ring_mod = ring_mod;
+                                }
+                            }
+                            AudioMessage::SetTrackRmSource { track_id, source } => {
+                                if track_id < mixer.tracks.len() {
+                                    let src = match source {
+                                        1 => ModulationSource::SelfMod,
+                                        2 => ModulationSource::Sidechain,
+                                        _ => ModulationSource::Sine,
+                                    };
+                                    mixer.tracks[track_id].fx_chain.ring_mod_l.source = src;
+                                    mixer.tracks[track_id].fx_chain.ring_mod_r.source = src;
+                                }
+                            }
+                            AudioMessage::SetTrackFxFilterPos { track_id, pos } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.dj_filter_l.set_position(pos);
+                                    mixer.tracks[track_id].fx_chain.dj_filter_r.set_position(pos);
+                                }
+                            }
+                            AudioMessage::SetTrackCompThreshold { track_id, thresh } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.compressor_l.threshold = thresh;
+                                    mixer.tracks[track_id].fx_chain.compressor_r.threshold = thresh;
+                                }
+                            }
+                            AudioMessage::SetTrackCompRatio { track_id, ratio } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.compressor_l.ratio = ratio;
+                                    mixer.tracks[track_id].fx_chain.compressor_r.ratio = ratio;
+                                }
+                            }
+                            AudioMessage::SetTrackCompAttack { track_id, attack } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.compressor_l.attack = attack;
+                                    mixer.tracks[track_id].fx_chain.compressor_r.attack = attack;
+                                }
+                            }
+                            AudioMessage::SetTrackCompRelease { track_id, release } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.compressor_l.release = release;
+                                    mixer.tracks[track_id].fx_chain.compressor_r.release = release;
+                                }
+                            }
+                            AudioMessage::SetTrackCompMakeup { track_id, makeup } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.compressor_l.makeup_gain = makeup;
+                                    mixer.tracks[track_id].fx_chain.compressor_r.makeup_gain = makeup;
+                                }
+                            }
+                            AudioMessage::SetReturnDelayTime { time } => {
+                                mixer.return_delay.tape.delay_time = time;
+                                mixer.return_delay.granular.delay_time = time;
+                            }
+                            AudioMessage::SetReturnDelayFeedback { feedback } => {
+                                mixer.return_delay.tape.feedback = feedback;
+                                mixer.return_delay.granular.feedback = feedback;
+                            }
+                            AudioMessage::SetReturnDelayMode { mode } => {
+                                let d_mode = match mode {
+                                    1 => DelayMode::Granular,
+                                    _ => DelayMode::Tape,
+                                };
+                                mixer.return_delay.mode = d_mode;
+                            }
+                            AudioMessage::SetReturnDelayPingPong { enabled } => {
+                                mixer.return_delay.tape.ping_pong = enabled;
+                            }
+                            AudioMessage::SetReturnDelayDrive { drive } => {
+                                mixer.return_delay.tape.drive = drive;
+                            }
+                            AudioMessage::SetReturnDelayGrainSize { size } => {
+                                mixer.return_delay.granular.grain_size = size;
+                            }
+                            AudioMessage::SetReturnDelayDensity { density } => {
+                                mixer.return_delay.granular.density = density;
+                            }
+                            AudioMessage::SetReturnDelaySpray { spray } => {
+                                mixer.return_delay.granular.spray = spray;
+                            }
+                            AudioMessage::SetReturnDelayPitch { pitch } => {
+                                mixer.return_delay.granular.pitch = pitch;
+                            }
+                            AudioMessage::SetTrackCompSidechain { track_id, enabled } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.compressor_sidechain = enabled;
+                                }
+                            }
+                            AudioMessage::SetMasterWlDrop { drop } => {
+                                mixer.master_waveloss_l.drop = drop;
+                                mixer.master_waveloss_r.drop = drop;
+                            }
+                            AudioMessage::SetMasterWlOutof { outof } => {
+                                mixer.master_waveloss_l.outof = outof;
+                                mixer.master_waveloss_r.outof = outof;
+                            }
+                            AudioMessage::SetMasterWlMode { mode } => {
+                                mixer.master_waveloss_l.mode = mode;
+                                mixer.master_waveloss_r.mode = mode;
                             }
                         }
                     }

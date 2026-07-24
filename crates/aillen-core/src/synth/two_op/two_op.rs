@@ -186,3 +186,30 @@ impl AudioNode for TwoOpSynth {
         mix * headroom
     }
 }
+
+impl crate::synth::PlayableInstrument for TwoOpSynth {
+    fn process(&mut self) -> (f32, f32) {
+        let val = <Self as AudioNode>::process(self);
+        (val, val)
+    }
+
+    fn note_on(&mut self, frequency: f32, velocity: f32) {
+        self.note_on(frequency, velocity);
+    }
+
+    fn note_off(&mut self, frequency: f32) {
+        self.note_off(frequency);
+    }
+
+    fn note_off_all(&mut self) {
+        self.note_off_all();
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}

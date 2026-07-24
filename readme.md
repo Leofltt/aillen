@@ -56,6 +56,11 @@ The following ASCII diagram illustrates the audio signal path from the instrumen
                                                     +-----------------+
                                                              |
                                                              v
+                                                    +-----------------+
+                                                    | Master WaveLoss |
+                                                    +-----------------+
+                                                             |
+                                                             v
                                                      Stereo Output (DAC)
 ```
 
@@ -140,6 +145,9 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | :--- | :--- | :--- |
 | `/mixer/master/volume` | `f` | Master output volume gain factor (e.g., 0.0 - 1.0+). |
 | `/mixer/master/filter` | `f` | Master output DJ filter position from `-1.0` (LP sweep) to `1.0` (HP sweep). Center `0.0` is bypass. |
+| `/mixer/master/waveloss/drop` | `i` | Master WaveLoss drop segments count. |
+| `/mixer/master/waveloss/outof` | `i` | Master WaveLoss total segments per cycle. |
+| `/mixer/master/waveloss/mode` | `i` | Master WaveLoss mode (1 = deterministic, 2 = random). |
 | `/track/<id>/volume` | `f` | Individual track volume gain factor. |
 | `/track/<id>/pan` | `f` | Track panning position from `-1.0` (Hard Left) to `1.0` (Hard Right). |
 | `/track/<id>/mute` | `i`/`b` | Mute (1 or true) or unmute (0 or false) the track. |
@@ -178,6 +186,11 @@ A modulation processor supporting multiple carriers.
 A dual-mode stereo processor containing:
 * **Tape Delay**: Simulated tape-loop delay. Featuring linear fractional-delay interpolation (for pitch glide sweeps), adjustable feedback, warm drive/saturation, and ping-pong routing.
 * **Granular Delay**: Slices incoming audio into overlapping windowed grains. Featuring configurable grain size (10ms–500ms), active density (1–8 active grains), pitch playback ratios (0.5x–2.0x), and randomized spray/jitter offsets.
+
+### 4. WaveLoss (`aillen_core::dsp::WaveLoss`)
+A zero-crossing wave-dropping distortion processor applied globally at the master output.
+* **Bypassed by default** (`drop = 0`).
+* **Controls**: Drop count, Outof cycle total segments, Mode (1 = deterministic, 2 = random).
 
 ---
 
