@@ -167,10 +167,52 @@ impl Mixer {
         let filt_l = self.master_filter_l.process(master_in_l);
         let filt_r = self.master_filter_r.process(master_in_r);
 
-        (
+        let (final_l, final_r) = (
             self.master_waveloss_l.process(filt_l),
             self.master_waveloss_r.process(filt_r),
-        )
+        );
+        (final_l, final_r)
+    }
+
+    /// Processes a single frame and returns both per-track outputs and the final master output.
+    pub fn process_detailed(&mut self) -> (Vec<(f32, f32)>, (f32, f32)) {
+        let mut sidechains = vec![(0.0f32, 0.0f32); self.tracks.len()];
+        for i in 0..self.tracks.len() {
+            if let Some(src_idx) = self.tracks[i].sidechain_source {
+                if src_idx < self.tracks.len() {
+                    sidechains[i] = self.tracks[src_idx].prev_out;
+                }
+            }
+        }
+
+        let mut track_outs = Vec::with_capacity(self.tracks.len());
+        let mut out_l = 0.0;
+        let mut out_r = 0.0;
+        let mut send_l = 0.0;
+        let mut send_r = 0.0;
+
+        for i in 0..self.tracks.len() {
+            let (sc_l, sc_r) = sidechains[i];
+            let (track_l, track_r) = self.tracks[i].process(sc_l, sc_r);
+            track_outs.push((track_l, track_r));
+            out_l += track_l;
+            out_r += track_r;
+            send_l += track_l * self.tracks[i].send_delay;
+            send_r += track_r * self.tracks[i].send_delay;
+        }
+
+        let (delay_l, delay_r) = self.return_delay.process_stereo(send_l, send_r);
+
+        let master_in_l = (out_l + delay_l) * self.master_volume;
+        let master_in_r = (out_r + delay_r) * self.master_volume;
+
+        let filt_l = self.master_filter_l.process(master_in_l);
+        let filt_r = self.master_filter_r.process(master_in_r);
+
+        let final_l = self.master_waveloss_l.process(filt_l);
+        let final_r = self.master_waveloss_r.process(filt_r);
+
+        (track_outs, (final_l, final_r))
     }
 }
 

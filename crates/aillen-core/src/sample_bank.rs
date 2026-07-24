@@ -24,6 +24,9 @@ impl SampleBank {
             return Err(anyhow::anyhow!("Directory does not exist: {:?}", base_path));
         }
         
+        let root_name = base_path.file_name().and_then(|n| n.to_str()).unwrap_or("Samples");
+        println!("{}", root_name);
+
         self.visit_dirs(base_path, base_path)?;
         Ok(())
     }
@@ -31,6 +34,16 @@ impl SampleBank {
     /// Internal recursive directory visitor helper.
     fn visit_dirs(&mut self, dir: &Path, base_path: &Path) -> Result<(), anyhow::Error> {
         if dir.is_dir() {
+            if dir != base_path {
+                if let Ok(rel_dir) = dir.strip_prefix(base_path) {
+                    let depth = rel_dir.components().count();
+                    let dashes_count = 6 + (depth.saturating_sub(1)) * 10;
+                    let dashes = "-".repeat(dashes_count);
+                    let folder_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    println!("{} {}", dashes, folder_name);
+                }
+            }
+
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
@@ -41,13 +54,17 @@ impl SampleBank {
                     if ext_lower == "wav" || ext_lower == "mp3" || ext_lower == "flac" {
                         if let Ok(rel_path) = path.strip_prefix(base_path) {
                             let key = rel_path.to_string_lossy().into_owned();
-                            println!("SampleBank: Loading \"{}\"...", key);
+                            let depth = rel_path.components().count();
+                            let dashes_count = 6 + (depth.saturating_sub(1)) * 10;
+                            let dashes = "-".repeat(dashes_count);
+                            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or(&key);
+                            println!("{} {}", dashes, file_name);
                             match load_audio_file(&path) {
                                 Ok(buf) => {
                                     self.samples.insert(key, Arc::new(buf));
                                 }
                                 Err(e) => {
-                                    eprintln!("SampleBank: Failed to load \"{:?}\": {:?}", path, e);
+                                    eprintln!("{} [Error] {}: {:?}", dashes, file_name, e);
                                 }
                             }
                         }

@@ -269,7 +269,12 @@ pub fn list_audio_devices() -> Result<()> {
 }
 
 /// Spawns the real-time audio thread, setting up CPAL output stream and routing messages.
-pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_index: Option<usize>) -> Result<cpal::Stream> {
+pub fn start_audio_thread(
+    rx: Receiver<AudioMessage>,
+    num_voices: usize,
+    device_index: Option<usize>,
+    ui_handle: crate::ui::UiHandle,
+) -> Result<cpal::Stream> {
     let host = cpal::default_host();
     
     let device = if let Some(index) = device_index {
@@ -652,7 +657,8 @@ pub fn start_audio_thread(rx: Receiver<AudioMessage>, num_voices: usize, device_
                         }
                     }
 
-                    let (sample_l, sample_r) = mixer.process();
+                    let (track_outs, (sample_l, sample_r)) = mixer.process_detailed();
+                    ui_handle.record_audio_frame(&track_outs, sample_l, sample_r);
                     if channels >= 2 {
                         frame[0] = sample_l;
                         frame[1] = sample_r;
