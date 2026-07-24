@@ -2,7 +2,7 @@ use crate::dsp::panner::{Panner, PanMode};
 use crate::synth::two_op::two_op::TwoOpSynth;
 use crate::synth::sampler::Sampler;
 use crate::dsp::filter::DjFilter;
-use crate::dsp::AudioProcessor;
+use crate::dsp::{AudioProcessor, FxChain, StereoProcessor, StereoDelay};
 
 /// Represents the set of sound generation instruments supported by Aillen.
 pub enum Instrument {
@@ -64,17 +64,23 @@ pub struct Track {
     panner: Panner,
     /// Whether this track is muted.
     pub mute: bool,
+    /// The effects chain applied to the instrument output.
+    pub fx_chain: FxChain,
+    /// The send amount to the delay return track (0.0 to 1.0).
+    pub send_delay: f32,
 }
 
 impl Track {
     /// Creates a new track with default volume, center panning, and unmuted state.
-    pub fn new(instrument: Instrument) -> Self {
+    pub fn new(instrument: Instrument, sample_rate: f32) -> Self {
         Self {
             instrument,
             volume: 1.0,
             pan: 0.0,
             panner: Panner::new(0.0, PanMode::ConstantPowerSin),
             mute: false,
+            fx_chain: FxChain::new(sample_rate),
+            send_delay: 0.0,
         }
     }
 
@@ -94,22 +100,23 @@ impl Track {
         self.mute = mute;
     }
 
-    /// Processes a single stereo audio sample frame from this track, applying volume and pan settings.
+    /// Processes a single stereo audio sample frame from this track, applying fx chain, volume, and pan settings.
     pub fn process(&mut self) -> (f32, f32) {
         if self.mute {
             return (0.0, 0.0);
         }
         let (raw_l, raw_r) = self.instrument.process();
+        let (fx_l, fx_r) = self.fx_chain.process_stereo(raw_l, raw_r);
         
         let (left_gain, right_gain) = self.panner.get_gains();
         (
-            raw_l * left_gain * self.volume,
-            raw_r * right_gain * self.volume,
+            fx_l * left_gain * self.volume,
+            fx_r * right_gain * self.volume,
         )
     }
 }
 
-/// The stereo master audio mixer containing all tracks and master volume controls.
+/// The stereo master audio mixer containing all tracks, return tracks, and master volume controls.
 pub struct Mixer {
     /// Fixed-size track list: Track 0 (TwoOp Synth) and Track 1 (Sampler).
     pub tracks: [Track; 2],
@@ -119,19 +126,25 @@ pub struct Mixer {
     pub master_filter_l: DjFilter,
     /// Master stereo DJ filter right channel.
     pub master_filter_r: DjFilter,
+    /// The return track containing a stereo delay.
+    pub return_delay: StereoDelay,
 }
 
 impl Mixer {
     /// Initializes a new Mixer with Track 0 and Track 1 set up for the current sample rate.
     pub fn new(sample_rate: f32, num_voices: usize) -> Self {
-        let synth_track = Track::new(Instrument::TwoOp(TwoOpSynth::new(sample_rate, num_voices)));
-        let sampler_track = Track::new(Instrument::Sampler(Sampler::new(sample_rate, num_voices)));
+        let synth_track = Track::new(Instrument::TwoOp(TwoOpSynth::new(sample_rate, num_voices)), sample_rate);
+        let sampler_track = Track::new(Instrument::Sampler(Sampler::new(sample_rate, num_voices)), sample_rate);
         
+        let mut return_delay = StereoDelay::new(sample_rate);
+        return_delay.mix = 1.0; // Full on wet by default
+
         Self {
             tracks: [synth_track, sampler_track],
             master_volume: 1.0,
             master_filter_l: DjFilter::new(sample_rate),
             master_filter_r: DjFilter::new(sample_rate),
+            return_delay,
         }
     }
 
@@ -146,23 +159,31 @@ impl Mixer {
         self.master_filter_r.set_position(pos);
     }
 
-    /// Processes and sums a single stereo output sample frame across all tracks, applying master volume and master filter.
+    /// Processes and sums a single stereo output sample frame across all tracks, applying return delay, master volume, and master filter.
     pub fn process(&mut self) -> (f32, f32) {
         let mut out_l = 0.0;
         let mut out_r = 0.0;
+        let mut send_l = 0.0;
+        let mut send_r = 0.0;
 
         for track in &mut self.tracks {
             let (l, r) = track.process();
             out_l += l;
             out_r += r;
+            send_l += l * track.send_delay;
+            send_r += r * track.send_delay;
         }
 
-        let summed_l = out_l * self.master_volume;
-        let summed_r = out_r * self.master_volume;
+        // Process return delay track (always 100% wet since return_delay.mix = 1.0)
+        let (delay_l, delay_r) = self.return_delay.process_stereo(send_l, send_r);
+
+        // Sum dry signals with return track output
+        let master_in_l = (out_l + delay_l) * self.master_volume;
+        let master_in_r = (out_r + delay_r) * self.master_volume;
 
         (
-            self.master_filter_l.process(summed_l),
-            self.master_filter_r.process(summed_r),
+            self.master_filter_l.process(master_in_l),
+            self.master_filter_r.process(master_in_r),
         )
     }
 }

@@ -6,8 +6,85 @@ Opinionated, feature-incomplete audio engine, DSP library, and live synthesizers
 
 This project is set up as a Cargo Workspace containing:
 
-- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including standard Biquad and DJ performance filters), ADSR envelopes, a stereo mixer, and instrument implementations (including a 2-operator FM synth, a sampler, and a sample bank).
+- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including standard Biquad and DJ performance filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), a stereo delay (Tape and Granular modes), a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, and a sample bank).
 - `aillen-cli`: A standalone performance synthesizer that wraps `aillen-core` with real-time stereo audio (`cpal`) and an asynchronous UDP OSC server mapped via lock-free channels (`crossbeam-channel`).
+
+---
+
+## Signal Flow Graph
+
+The following ASCII diagram illustrates the audio signal path from the instruments to the final stereo hardware output, highlighting the track-level `FxChain` inserts, the send/return routing, and the master bus:
+
+```
+                            +---------------------------------------+
+                            |              TRACK (0 or 1)           |
+                            |  +---------------+                 L  |
+                            |  |  Instrument   |---------------+--->|
+                            |  +---------------+               | R  |
+                            |                                  v    |
+                            |                            +---------+|
+                            |                            | FxChain ||
+                            |                            +---------+|
+                            |                            /    |     |
+                            |               (Send level)      v     |
+                            |                    |       +---------+|
+                            |                    |       | Panner  ||
+                            |                    |       +---------+|
+                            |                    |            |     |
+                            +--------------------|------------|-----+
+                                                 |            |
+                                                 v            v
+                                            [Sum Sends]  [Sum Dry]
+                                                 |            |
+                                                 v            |
+                                         +---------------+    |
+                                         | Return Delay  |    |
+                                         | (100% Wet)    |    |
+                                         +---------------+    |
+                                                 |            |
+                                                 v            v
+                                                 +----> [Mixer Summing]
+                                                             |
+                                                             v
+                                                    +-----------------+
+                                                    |  Master Volume  |
+                                                    +-----------------+
+                                                             |
+                                                             v
+                                                    +-----------------+
+                                                    | Master DJFilter |
+                                                    +-----------------+
+                                                             |
+                                                             v
+                                                     Stereo Output (DAC)
+```
+
+### Track FxChain Detail
+Each track owns an independent `FxChain` containing a sequential arrangement of stereo processors:
+
+```
+                                     FxChain (Stereo)
+                                     
+                                   L Input     R Input
+                                      |           |
+                                      v           v
+                                 +---------+ +---------+
+                                 |AmRingMod| |AmRingMod| <--- Sidechain (optional)
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
+                                 +---------+ +---------+
+                                 |DjFilter | |DjFilter |
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
+                                 +---------+ +---------+
+                                 |Compressr| |Compressr| <--- Sidechain (optional)
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
+                                   L Output    R Output
+```
 
 ---
 
@@ -50,9 +127,10 @@ cargo run -p aillen-cli -- --device-index 2
 
 ## 2. Audio Mixer & Instrument Tracks
 
-The engine supports a stereo Mixer with exactly two instrument tracks:
+The engine supports a stereo Mixer with exactly two instrument tracks and one delay return track:
 - **Track 0**: `TwoOp` (FM Synth)
 - **Track 1**: `Sampler` (Sample playback engine with multi-format support via Symphonia)
+- **Return Track**: A stereo delay effect track (100% wet by default).
 
 All OSC messages must target the appropriate track path (`/track/<id>/`) or mixer path (`/mixer/`).
 
@@ -65,6 +143,7 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | `/track/<id>/volume` | `f` | Individual track volume gain factor. |
 | `/track/<id>/pan` | `f` | Track panning position from `-1.0` (Hard Left) to `1.0` (Hard Right). |
 | `/track/<id>/mute` | `i`/`b` | Mute (1 or true) or unmute (0 or false) the track. |
+| `/track/<id>/send/delay` | `f` | Send level (0.0 to 1.0) of this track's signal to the return delay track. |
 
 ### Note Control (Available on both Tracks)
 
@@ -76,7 +155,33 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 
 ---
 
-## 3. Instrument-Specific Settings
+## 3. DSP Effects Reference
+
+The core DSP library offers several high-quality effects modules:
+
+### 1. Compressor (`aillen_core::dsp::Compressor`)
+A sidechainable peak-detecting dynamics processor.
+* **Bypassed by default** (Ratio = 1.0).
+* **Controls**: Threshold (dB), Ratio, Attack (seconds), Release (seconds), Makeup Gain (dB).
+* **Sidechaining**: Can compress the signal based on a secondary input channel.
+
+### 2. AM / Ring Modulator (`aillen_core::dsp::AmRingMod`)
+A modulation processor supporting multiple carriers.
+* **Bypassed by default** (Depth = 0.0).
+* **Source selection**:
+  - `Sine`: Internal sine wave oscillator (uses adjustable Frequency).
+  - `SelfMod`: Modulates input with itself.
+  - `Sidechain`: Modulates input with an external sidechain signal.
+* **Controls**: Depth/Mix (0.0 to 1.0), Frequency (Hz), Ring Mod mode (true/false).
+
+### 3. Stereo Delay (`aillen_core::dsp::StereoDelay`)
+A dual-mode stereo processor containing:
+* **Tape Delay**: Simulated tape-loop delay. Featuring linear fractional-delay interpolation (for pitch glide sweeps), adjustable feedback, warm drive/saturation, and ping-pong routing.
+* **Granular Delay**: Slices incoming audio into overlapping windowed grains. Featuring configurable grain size (10ms–500ms), active density (1–8 active grains), pitch playback ratios (0.5x–2.0x), and randomized spray/jitter offsets.
+
+---
+
+## 4. Instrument-Specific Settings
 
 ### Track 0: TwoOp Synth
 
@@ -112,7 +217,7 @@ Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 
 ---
 
-## 4. SampleBank Loading
+## 5. SampleBank Loading
 
 Aillen can automatically scan a directory on startup (defaulting to `~/Desktop/KairosSamples` if not specified) and preload all found `.wav`, `.flac`, and `.mp3` files.
 
@@ -120,7 +225,7 @@ You can trigger these preloaded buffers instantly via OSC using `/track/1/sample
 
 ---
 
-## 5. Atomic Updates (Bundles)
+## 6. Atomic Updates (Bundles)
 
 To update multiple parameters and trigger notes simultaneously without artifacts, use **OSC Bundles**.
 

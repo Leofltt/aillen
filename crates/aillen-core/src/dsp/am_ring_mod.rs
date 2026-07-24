@@ -33,14 +33,14 @@ impl AmRingMod {
     /// Creates a new `AmRingMod` instance with default settings:
     /// - source: `Sine`
     /// - frequency: 440.0 Hz
-    /// - depth: 1.0
+    /// - depth: 0.0 (off by default)
     /// - ring_mod: true (Ring Mod mode)
     pub fn new(sample_rate: f32) -> Self {
         Self {
             sample_rate,
             source: ModulationSource::Sine,
             frequency: 440.0,
-            depth: 1.0,
+            depth: 0.0,
             ring_mod: true,
             phase: 0.0,
         }

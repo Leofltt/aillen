@@ -23,7 +23,7 @@ pub struct Compressor {
 impl Compressor {
     /// Creates a new `Compressor` with default settings:
     /// - threshold: -24.0 dB
-    /// - ratio: 4.0
+    /// - ratio: 1.0 (off/transparent by default)
     /// - attack: 0.01 seconds (10ms)
     /// - release: 0.1 seconds (100ms)
     /// - makeup_gain: 0.0 dB
@@ -31,7 +31,7 @@ impl Compressor {
         Self {
             sample_rate,
             threshold: -24.0,
-            ratio: 4.0,
+            ratio: 1.0,
             attack: 0.01,
             release: 0.1,
             makeup_gain: 0.0,
