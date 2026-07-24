@@ -10,12 +10,13 @@ use crossterm::{
 
 const UI_WIDTH: usize = 80;
 const UI_HEIGHT: usize = 43; // Exactly 43 rows total
+const DISPLAY_SLOTS: usize = 4; // Always show exactly 4 track slots in the UI
 
-const TRACK_ROWS: usize = 30; // Rows 0..30
+const TRACK_ROWS: usize = 15; // Rows 0..15 and 16..30
 const MASTER_START_ROW: usize = 31; // Rows 31..42
 
 const MASTER_COLS: usize = 60; // 60 cols for master, 20 cols for scope
-const TRACK_WAVEFORM_ROWS: usize = 28; // Rows 2..29 for track vertical waveforms
+const TRACK_WAVEFORM_ROWS: usize = 11; // Rows 4..15 and 19..30 for track vertical waveforms
 const MASTER_WAVEFORM_COLS: usize = 58; // Length for master horizontal waveform
 
 const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -39,6 +40,12 @@ pub struct UiData {
     pub track_r_samples: Vec<VecDeque<f32>>,
     pub track_osc_msgs: Vec<VecDeque<String>>,
     pub track_last_osc_time: Vec<Option<Instant>>,
+    /// Per-track last activity timestamp (audio or OSC) for LRU display selection.
+    pub track_last_activity: Vec<Option<Instant>>,
+    /// The track IDs currently occupying the 4 display slots (ordered by slot position).
+    pub displayed_tracks: Vec<usize>,
+    /// Per-track memory of the last slot occupied (for sticky positioning).
+    pub preferred_slot: Vec<Option<usize>>,
     pub master_l_samples: VecDeque<f32>,
     pub master_r_samples: VecDeque<f32>,
     pub master_osc_msgs: VecDeque<String>,
@@ -53,11 +60,17 @@ impl UiData {
         let mut track_r_samples = Vec::with_capacity(num_tracks);
         let mut track_osc_msgs = Vec::with_capacity(num_tracks);
         let mut track_last_osc_time = Vec::with_capacity(num_tracks);
+        let mut track_last_activity = Vec::with_capacity(num_tracks);
+        let mut preferred_slot = Vec::with_capacity(num_tracks);
 
         for i in 0..num_tracks {
             let name = match i {
                 0 => "Track 0: TwoOp".to_string(),
                 1 => "Track 1: Sampler".to_string(),
+                2 => "Track 2: Sampler".to_string(),
+                3 => "Track 3: Sampler".to_string(),
+                4 => "Track 4: TwoOp".to_string(),
+                5 => "Track 5: Sampler".to_string(),
                 _ => format!("Track {}", i),
             };
             track_names.push(name);
@@ -65,7 +78,17 @@ impl UiData {
             track_r_samples.push(VecDeque::from(vec![0.0; TRACK_WAVEFORM_ROWS]));
             track_osc_msgs.push(VecDeque::new());
             track_last_osc_time.push(None);
+            track_last_activity.push(None);
+            // Seed preferred slots for the initial display tracks
+            if i < DISPLAY_SLOTS {
+                preferred_slot.push(Some(i));
+            } else {
+                preferred_slot.push(None);
+            }
         }
+
+        // Seed the initial 4 display slots with the first N tracks (up to DISPLAY_SLOTS)
+        let initial_displayed: Vec<usize> = (0..DISPLAY_SLOTS.min(num_tracks)).collect();
 
         Self {
             track_names,
@@ -73,12 +96,109 @@ impl UiData {
             track_r_samples,
             track_osc_msgs,
             track_last_osc_time,
+            track_last_activity,
+            displayed_tracks: initial_displayed,
+            preferred_slot,
             master_l_samples: VecDeque::from(vec![0.0; MASTER_WAVEFORM_COLS]),
             master_r_samples: VecDeque::from(vec![0.0; MASTER_WAVEFORM_COLS]),
             master_osc_msgs: VecDeque::new(),
             master_last_osc_time: None,
             dirty: true, // Render initial frame
         }
+    }
+
+    /// Mark a track as active. If it is not in the current display slots,
+    /// evict the least recently active slot and replace it — preferring
+    /// to place the track back in its last known slot for visual stability.
+    pub fn touch_track(&mut self, track_id: usize) {
+        let now = Instant::now();
+        if track_id < self.track_last_activity.len() {
+            self.track_last_activity[track_id] = Some(now);
+        }
+
+        // Already displayed? Nothing to swap.
+        if self.displayed_tracks.contains(&track_id) {
+            return;
+        }
+
+        // Helper: find the LRU (least recently active) slot index
+        let find_lru_slot = |displayed: &[usize], activity: &[Option<Instant>]| -> usize {
+            let mut oldest_slot = 0;
+            let mut oldest_time: Option<Instant> = activity
+                .get(displayed[0])
+                .copied()
+                .flatten();
+
+            for (slot, &tid) in displayed.iter().enumerate().skip(1) {
+                let t = activity.get(tid).copied().flatten();
+                match (oldest_time, t) {
+                    (_, None) => {
+                        oldest_slot = slot;
+                        break;
+                    }
+                    (Some(oldest), Some(current)) if current < oldest => {
+                        oldest_slot = slot;
+                        oldest_time = Some(current);
+                    }
+                    (None, _) => {}
+                    _ => {}
+                }
+            }
+            oldest_slot
+        };
+
+        let lru_slot = find_lru_slot(&self.displayed_tracks, &self.track_last_activity);
+
+        // Determine which slot to use: prefer the track's previous slot if
+        // its current occupant is not the most recently active displayed track.
+        let target_slot = if let Some(Some(pref)) = self.preferred_slot.get(track_id) {
+            let pref = *pref;
+            if pref < self.displayed_tracks.len() {
+                // Check that the preferred slot's occupant is "stale enough" to evict.
+                // Find the most recently active slot so we don't evict it.
+                let mut newest_slot = 0;
+                let mut newest_time: Option<Instant> = None;
+                for (slot, &tid) in self.displayed_tracks.iter().enumerate() {
+                    let t = self.track_last_activity.get(tid).copied().flatten();
+                    match (newest_time, t) {
+                        (None, Some(_)) | (_, None) => {
+                            if t.is_some() {
+                                newest_slot = slot;
+                                newest_time = t;
+                            }
+                        }
+                        (Some(best), Some(current)) if current > best => {
+                            newest_slot = slot;
+                            newest_time = Some(current);
+                        }
+                        _ => {}
+                    }
+                }
+                // Only reclaim preferred slot if it's not the single most active slot
+                if pref != newest_slot {
+                    pref
+                } else {
+                    lru_slot
+                }
+            } else {
+                lru_slot
+            }
+        } else {
+            lru_slot
+        };
+
+        // Record the evicted track's slot preference so it can reclaim later
+        let evicted_track = self.displayed_tracks[target_slot];
+        if evicted_track < self.preferred_slot.len() {
+            self.preferred_slot[evicted_track] = Some(target_slot);
+        }
+
+        // Place the new track and remember its slot
+        self.displayed_tracks[target_slot] = track_id;
+        if track_id < self.preferred_slot.len() {
+            self.preferred_slot[track_id] = Some(target_slot);
+        }
+        self.dirty = true;
     }
 
     pub fn push_samples(&mut self, track_outputs: &[(f32, f32)], master_l: f32, master_r: f32) {
@@ -98,6 +218,7 @@ impl UiData {
 
                 if l.abs() > 1e-4 || r.abs() > 1e-4 {
                     changed = true;
+                    self.touch_track(idx);
                 }
             }
         }
@@ -130,6 +251,7 @@ impl UiData {
                 self.track_osc_msgs[track_id].push_back(line.to_string());
             }
             self.track_last_osc_time[track_id] = Some(Instant::now());
+            self.touch_track(track_id);
             self.dirty = true;
         }
     }
@@ -260,7 +382,7 @@ impl UiHandle {
 }
 
 /// Spawns the UI rendering loop thread at ~30 FPS (renders ONLY when dirty).
-pub fn start_ui_thread(ui_handle: UiHandle, num_tracks: usize) {
+pub fn start_ui_thread(ui_handle: UiHandle, _num_tracks: usize) {
     std::thread::spawn(move || {
         let mut stdout = stdout();
         let _ = execute!(stdout, terminal::Clear(ClearType::All), cursor::Hide);
@@ -287,90 +409,115 @@ pub fn start_ui_thread(ui_handle: UiHandle, num_tracks: usize) {
             // Prepare 80 cols x 43 rows grid buffer
             let mut grid = vec![vec![' '; UI_WIDTH]; UI_HEIGHT];
 
-            // 1. TRACKS SECTION (Rows 0..30)
-            // Row 0: Top border
+            // 1. TRACKS SECTION – 2x2 grid showing the 4 most recently active tracks
+            let tracks_per_row: usize = 2;
+            let display_count = data_guard.displayed_tracks.len().min(DISPLAY_SLOTS);
+            let num_bands = (display_count + tracks_per_row - 1) / tracks_per_row;
+
+            // Horizontal borders
             for c in 0..UI_WIDTH {
-                grid[0][c] = '─';
-                grid[TRACK_ROWS][c] = '─';
+                grid[0][c] = '─';                           // top border
+                grid[TRACK_ROWS][c] = '─';                  // mid border
+                grid[TRACK_ROWS * 2][c] = '─';              // bottom of tracks area
             }
+            // Corner / junction chars
             grid[0][0] = '┌';
             grid[0][UI_WIDTH - 1] = '┐';
             grid[TRACK_ROWS][0] = '├';
             grid[TRACK_ROWS][UI_WIDTH - 1] = '┤';
+            grid[TRACK_ROWS * 2][0] = '├';
+            grid[TRACK_ROWS * 2][UI_WIDTH - 1] = '┤';
 
-            // Outer vertical walls for rows 0..30
-            for r in 1..TRACK_ROWS {
+            // Outer vertical walls for all track rows (1..TRACK_ROWS*2 - 1)
+            for r in 1..(TRACK_ROWS * 2) {
                 grid[r][0] = '│';
                 grid[r][UI_WIDTH - 1] = '│';
             }
 
-            // Partition top section for N tracks
-            let track_width = if num_tracks > 0 { (UI_WIDTH - 2) / num_tracks } else { UI_WIDTH - 2 };
-            for t in 0..num_tracks {
-                let left_col = 1 + t * track_width;
-                let right_col = if t == num_tracks - 1 { UI_WIDTH - 2 } else { left_col + track_width - 1 };
-                let width = right_col - left_col + 1;
+            // Take a snapshot of which tracks to display (to avoid borrow issues)
+            let displayed: Vec<usize> = data_guard.displayed_tracks.iter().copied().take(DISPLAY_SLOTS).collect();
 
-                // Draw track column separator if not last track
-                if t < num_tracks - 1 {
-                    for r in 1..TRACK_ROWS {
-                        grid[r][right_col] = '│';
+            // Render each band of tracks
+            let track_width = (UI_WIDTH - 2) / tracks_per_row;
+            for band in 0..num_bands {
+                let row_offset = band * TRACK_ROWS;
+                let band_start = band * tracks_per_row;
+                let band_end = (band_start + tracks_per_row).min(display_count);
+                let band_count = band_end - band_start;
+
+                for slot_in_band in 0..band_count {
+                    let display_slot = band_start + slot_in_band;
+                    let t = displayed[display_slot]; // actual track index
+                    let left_col = 1 + slot_in_band * track_width;
+                    let right_col = if slot_in_band == tracks_per_row - 1 { UI_WIDTH - 2 } else { left_col + track_width - 1 };
+                    let width = right_col - left_col + 1;
+
+                    // Draw column separator between tracks in the same band
+                    if slot_in_band < band_count - 1 {
+                        for r in (row_offset + 1)..(row_offset + TRACK_ROWS) {
+                            grid[r][right_col] = '│';
+                        }
+                        grid[row_offset][right_col] = '┬';
+                        grid[row_offset + TRACK_ROWS][right_col] = '┴';
                     }
-                    grid[0][right_col] = '┬';
-                    grid[TRACK_ROWS][right_col] = '┴';
-                }
 
-                // Header at Row 1
-                let default_name = format!("Track {}", t);
-                let name_str = data_guard.track_names.get(t).unwrap_or(&default_name);
-                let header = if name_str.len() > width { &name_str[..width] } else { name_str };
-                let start_c = left_col + (width.saturating_sub(header.len())) / 2;
-                for (idx, ch) in header.chars().enumerate() {
-                    if start_c + idx < right_col {
-                        grid[1][start_c + idx] = ch;
+                    // Header (first content row of this band)
+                    let header_row = row_offset + 1;
+                    let default_name = format!("Track {}", t);
+                    let name_str = data_guard.track_names.get(t).unwrap_or(&default_name);
+                    let header = if name_str.len() > width { &name_str[..width] } else { name_str };
+                    let start_c = left_col + (width.saturating_sub(header.len())) / 2;
+                    for (idx, ch) in header.chars().enumerate() {
+                        if start_c + idx < right_col {
+                            grid[header_row][start_c + idx] = ch;
+                        }
                     }
-                }
 
-                // Dual vertical waveforms for L and R output channels (Rows 2..29)
-                let chan_w = width / 2;
-                let center_l = left_col + chan_w / 2;
-                let center_r = left_col + chan_w + chan_w / 2;
-                let max_h_disp = (chan_w as f32 * 0.45).max(1.0);
+                    // Dual vertical waveforms (L and R channels)
+                    let waveform_start_row = row_offset + 3;
+                    let chan_w = width / 2;
+                    let center_l = left_col + chan_w / 2;
+                    let center_r = left_col + chan_w + chan_w / 2;
+                    let max_h_disp = (chan_w as f32 * 0.45).max(1.0);
 
-                // Flat vertical lines for silence
-                for r in 2..TRACK_ROWS {
-                    if center_l < right_col { grid[r][center_l] = '│'; }
-                    if center_r < right_col { grid[r][center_r] = '│'; }
-                }
-
-                if let (Some(l_samples), Some(r_samples)) = (data_guard.track_l_samples.get(t), data_guard.track_r_samples.get(t)) {
-                    let num_s = l_samples.len().min(TRACK_WAVEFORM_ROWS);
-                    for r_idx in 0..num_s {
-                        let r = 2 + r_idx;
-                        let s_l = l_samples[r_idx];
-                        let s_r = r_samples[r_idx];
-
-                        let disp_l = scale_amplitude(s_l, max_h_disp).round() as i32;
-                        let disp_r = scale_amplitude(s_r, max_h_disp).round() as i32;
-
-                        let target_l = (center_l as i32 + disp_l).clamp(left_col as i32, (left_col + chan_w - 1) as i32) as usize;
-                        let target_r = (center_r as i32 + disp_r).clamp((left_col + chan_w) as i32, (right_col - 1) as i32) as usize;
-
-                        grid[r][target_l] = '│';
-                        grid[r][target_r] = '│';
+                    // Flat vertical lines for silence
+                    for r in waveform_start_row..(row_offset + TRACK_ROWS) {
+                        if center_l < right_col { grid[r][center_l] = '│'; }
+                        if center_r < right_col { grid[r][center_r] = '│'; }
                     }
-                }
 
-                // Recent OSC message lines printed on separate newlines in middle area (Rows 10..22)
-                if let Some(msg_queue) = data_guard.track_osc_msgs.get(t) {
-                    let start_r = 10;
-                    for (i, line) in msg_queue.iter().enumerate().take(12) {
-                        let r = start_r + i;
-                        let display_text = if line.len() > width { &line[..width] } else { line };
-                        let start_col = left_col + (width.saturating_sub(display_text.len())) / 2;
-                        for (j, ch) in display_text.chars().enumerate() {
-                            if start_col + j < right_col {
-                                grid[r][start_col + j] = ch;
+                    if let (Some(l_samples), Some(r_samples)) = (data_guard.track_l_samples.get(t), data_guard.track_r_samples.get(t)) {
+                        let num_s = l_samples.len().min(TRACK_WAVEFORM_ROWS);
+                        for r_idx in 0..num_s {
+                            let r = waveform_start_row + r_idx;
+                            if r >= row_offset + TRACK_ROWS { break; }
+                            let s_l = l_samples[r_idx];
+                            let s_r = r_samples[r_idx];
+
+                            let disp_l = scale_amplitude(s_l, max_h_disp).round() as i32;
+                            let disp_r = scale_amplitude(s_r, max_h_disp).round() as i32;
+
+                            let target_l = (center_l as i32 + disp_l).clamp(left_col as i32, (left_col + chan_w - 1) as i32) as usize;
+                            let target_r = (center_r as i32 + disp_r).clamp((left_col + chan_w) as i32, (right_col - 1) as i32) as usize;
+
+                            grid[r][target_l] = '│';
+                            grid[r][target_r] = '│';
+                        }
+                    }
+
+                    // OSC messages in the middle area of this band
+                    let osc_start_row = row_offset + 5;
+                    let max_osc_lines = (TRACK_ROWS - 6).min(8);
+                    if let Some(msg_queue) = data_guard.track_osc_msgs.get(t) {
+                        for (i, line) in msg_queue.iter().enumerate().take(max_osc_lines) {
+                            let r = osc_start_row + i;
+                            if r >= row_offset + TRACK_ROWS { break; }
+                            let display_text = if line.len() > width { &line[..width] } else { line };
+                            let start_col = left_col + (width.saturating_sub(display_text.len())) / 2;
+                            for (j, ch) in display_text.chars().enumerate() {
+                                if start_col + j < right_col {
+                                    grid[r][start_col + j] = ch;
+                                }
                             }
                         }
                     }

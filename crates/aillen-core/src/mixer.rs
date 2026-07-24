@@ -96,20 +96,29 @@ pub struct Mixer {
 }
 
 impl Mixer {
-    /// Initializes a new Mixer with Track 0 and Track 1 set up for the current sample rate.
+    /// Initializes a new Mixer with Track 0 - 6 set up for the current sample rate.
     pub fn new(sample_rate: f32, num_voices: usize) -> Self {
         let mut synth_track = Track::new(Box::new(TwoOpSynth::new(sample_rate, num_voices)), sample_rate);
         let mut sampler_track = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
+        let mut sampler_track2 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
+        let mut sampler_track3 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
+        let mut synth_track2 = Track::new(Box::new(TwoOpSynth::new(sample_rate, num_voices)), sample_rate);
+        let mut sampler_track4 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
         
         // Default cross-sidechaining configuration
         synth_track.sidechain_source = Some(1);
-        sampler_track.sidechain_source = Some(0);
+        sampler_track.sidechain_source = None;
+        sampler_track2.sidechain_source = None;
+        sampler_track3.sidechain_source = None;
+        synth_track2.sidechain_source = Some(1);
+        sampler_track4.sidechain_source = None;
+        
 
         let mut return_delay = StereoDelay::new(sample_rate);
         return_delay.mix = 1.0; // Full on wet by default
 
         Self {
-            tracks: vec![synth_track, sampler_track],
+            tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, synth_track2, sampler_track4],
             master_volume: 1.0,
             master_filter_l: DjFilter::new(sample_rate),
             master_filter_r: DjFilter::new(sample_rate),
