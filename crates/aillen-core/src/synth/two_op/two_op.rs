@@ -110,6 +110,42 @@ impl TwoOpSynth {
         self.master_patch.osc2_detune = detune;
         self.update_voices();
     }
+
+    /// Sets self-feedback of Operator 2.
+    pub fn set_osc2_feedback(&mut self, feedback: f32) {
+        self.master_patch.osc2_feedback = feedback;
+        self.update_voices();
+    }
+
+    /// Sets wavefolder settings (gain, mix).
+    pub fn set_wavefold(&mut self, gain: f32, mix: f32) {
+        self.master_patch.wavefold_gain = gain;
+        self.master_patch.wavefold_mix = mix;
+        self.update_voices();
+    }
+
+    /// Sets phase noise injection amounts for carrier and modulator.
+    pub fn set_noise(&mut self, carrier_noise: f32, modulator_noise: f32) {
+        self.master_patch.carrier_noise = carrier_noise;
+        self.master_patch.modulator_noise = modulator_noise;
+        self.update_voices();
+    }
+
+    /// Sets pitch sweep envelope (depth, decay).
+    pub fn set_pitch_sweep(&mut self, depth: f32, decay: f32) {
+        self.master_patch.pitch_sweep_depth = depth;
+        self.master_patch.pitch_sweep_decay = decay;
+        self.update_voices();
+    }
+
+    /// Sets voice LFO (waveform, speed, mod index depth, filter cutoff depth).
+    pub fn set_lfo(&mut self, waveform: usize, speed: f32, mod_index: f32, cutoff: f32) {
+        self.master_patch.lfo_waveform = waveform;
+        self.master_patch.lfo_speed = speed;
+        self.master_patch.lfo_mod_index = mod_index;
+        self.master_patch.lfo_cutoff = cutoff;
+        self.update_voices();
+    }
     
     /// Triggers note playback.
     pub fn note_on(&mut self, frequency: f32, velocity: f32) {

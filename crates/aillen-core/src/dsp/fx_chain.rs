@@ -1,15 +1,20 @@
-use crate::dsp::{Compressor, AmRingMod, StereoProcessor, AudioProcessor, ModulationSource};
+use crate::dsp::{Compressor, AmRingMod, StereoProcessor, AudioProcessor, ModulationSource, Distortion, DistortionMode};
 use crate::dsp::filter::DjFilter;
 
 /// A sequential stereo effects processor applying:
 /// 1. Ring Modulation
-/// 2. DJ-style Low-Pass/High-Pass Filter
-/// 3. Dynamic Range Compression (with sidechaining support)
+/// 2. Distortion/Drive Saturation
+/// 3. DJ-style Low-Pass/High-Pass Filter
+/// 4. Dynamic Range Compression (with sidechaining support)
 pub struct FxChain {
     /// Ring modulator left channel.
     pub ring_mod_l: AmRingMod,
     /// Ring modulator right channel.
     pub ring_mod_r: AmRingMod,
+    /// Distortion left channel.
+    pub distortion_l: Distortion,
+    /// Distortion right channel.
+    pub distortion_r: Distortion,
     /// DJ performance filter left channel.
     pub dj_filter_l: DjFilter,
     /// DJ performance filter right channel.
@@ -28,6 +33,8 @@ impl FxChain {
         Self {
             ring_mod_l: AmRingMod::new(sample_rate),
             ring_mod_r: AmRingMod::new(sample_rate),
+            distortion_l: Distortion::new(DistortionMode::Bypass, 1.0, 0.0),
+            distortion_r: Distortion::new(DistortionMode::Bypass, 1.0, 0.0),
             dj_filter_l: DjFilter::new(sample_rate),
             dj_filter_r: DjFilter::new(sample_rate),
             compressor_l: Compressor::new(sample_rate),
@@ -56,11 +63,15 @@ impl FxChain {
             self.ring_mod_r.process(right)
         };
 
-        // 2. DJ Filter
-        let filt_l = self.dj_filter_l.process(rm_l);
-        let filt_r = self.dj_filter_r.process(rm_r);
+        // 2. Distortion/Saturation
+        let dist_l = self.distortion_l.process(rm_l);
+        let dist_r = self.distortion_r.process(rm_r);
 
-        // 3. Compressor
+        // 3. DJ Filter
+        let filt_l = self.dj_filter_l.process(dist_l);
+        let filt_r = self.dj_filter_r.process(dist_r);
+
+        // 4. Compressor
         let comp_l = if self.compressor_sidechain {
             self.compressor_l.process_sidechain(filt_l, sidechain_l)
         } else {

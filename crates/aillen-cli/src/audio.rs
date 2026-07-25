@@ -1,4 +1,4 @@
-use aillen_core::dsp::{filter::FilterType, oscillator::Waveform, ModulationSource, DelayMode};
+use aillen_core::dsp::{filter::FilterType, oscillator::Waveform, ModulationSource, DelayMode, distortion::DistortionMode};
 use aillen_core::synth::two_op::SynthMode;
 use aillen_core::synth::sampler::{PlayMode, load_audio_file, StretchMode};
 use aillen_core::mixer::Mixer;
@@ -48,33 +48,39 @@ pub enum AudioMessage {
     },
     
     // TwoOp specific
-    /// Sets Legato mode on the TwoOp synth (Track 0).
+    /// Sets Legato mode on the TwoOp synth.
     TwoOpSetLegato { 
+        track_id: usize,
         /// Legato toggle state.
         enabled: bool 
     },
     /// Sets real-time parameter updating on active notes for the TwoOp synth.
     TwoOpSetRealtimeUpdate { 
+        track_id: usize,
         /// Toggle state.
         enabled: bool 
     },
     /// Sets the active synthesis mode for the TwoOp synth.
     TwoOpSetMode { 
+        track_id: usize,
         /// Synthesis algorithm.
         mode: SynthMode 
     },
     /// Sets the waveform of Operator 1 (Carrier) for the TwoOp synth.
     TwoOpSetOsc1Waveform { 
+        track_id: usize,
         /// Target waveform.
         waveform: Waveform 
     },
     /// Sets the waveform of Operator 2 (Modulator) for the TwoOp synth.
     TwoOpSetOsc2Waveform { 
+        track_id: usize,
         /// Target waveform.
         waveform: Waveform 
     },
     /// Sets Operator 1 ADSR envelope parameters.
     TwoOpSetOsc1Adsr { 
+        track_id: usize,
         /// Attack time in seconds.
         a: f32, 
         /// Decay time in seconds.
@@ -86,6 +92,7 @@ pub enum AudioMessage {
     },
     /// Sets Operator 2 ADSR envelope parameters.
     TwoOpSetOsc2Adsr { 
+        track_id: usize,
         /// Attack time in seconds.
         a: f32, 
         /// Decay time in seconds.
@@ -97,6 +104,7 @@ pub enum AudioMessage {
     },
     /// Sets Filter Cutoff ADSR envelope parameters.
     TwoOpSetFilterAdsr { 
+        track_id: usize,
         /// Attack time in seconds.
         a: f32, 
         /// Decay time in seconds.
@@ -108,6 +116,7 @@ pub enum AudioMessage {
     },
     /// Sets biquad filter properties.
     TwoOpSetFilterParams { 
+        track_id: usize,
         /// Base cutoff frequency in Hz.
         cutoff: f32, 
         /// Filter resonance Q-factor.
@@ -117,6 +126,7 @@ pub enum AudioMessage {
     },
     /// Enables/disables filter cutoff envelope modulation and sets its depth.
     TwoOpSetFilterMod { 
+        track_id: usize,
         /// Toggle state.
         enabled: bool, 
         /// Modulation depth in Hz.
@@ -124,12 +134,44 @@ pub enum AudioMessage {
     },
     /// Sets modulator synthesis properties.
     TwoOpSetModulationParams { 
+        track_id: usize,
         /// Modulation index.
         index: f32, 
         /// Modulator frequency ratio relative to Carrier.
         ratio: f32, 
         /// Modulator detuning in Hz.
         detune: f32 
+    },
+    /// Sets Operator 2 self-feedback.
+    TwoOpSetOsc2Feedback {
+        track_id: usize,
+        feedback: f32,
+    },
+    /// Sets Operator 2 wavefolder.
+    TwoOpSetWavefold {
+        track_id: usize,
+        gain: f32,
+        mix: f32,
+    },
+    /// Sets phase noise injection.
+    TwoOpSetNoise {
+        track_id: usize,
+        carrier_noise: f32,
+        modulator_noise: f32,
+    },
+    /// Sets pitch sweep envelope parameters.
+    TwoOpSetPitchSweep {
+        track_id: usize,
+        depth: f32,
+        decay: f32,
+    },
+    /// Sets voice LFO properties.
+    TwoOpSetLfo {
+        track_id: usize,
+        waveform: usize,
+        speed: f32,
+        mod_index: f32,
+        cutoff: f32,
     },
 
     // Sampler specific
@@ -279,6 +321,9 @@ pub enum AudioMessage {
     SetReturnDelaySpray { spray: f32 },
     SetReturnDelayPitch { pitch: f32 },
     SetTrackCompSidechain { track_id: usize, enabled: bool },
+    SetTrackDistortionMode { track_id: usize, mode: i32 },
+    SetTrackDistortionDrive { track_id: usize, drive: f32 },
+    SetTrackDistortionMix { track_id: usize, mix: f32 },
     SetMasterWlDrop { drop: usize },
     SetMasterWlOutof { outof: usize },
     SetMasterWlMode { mode: usize },
@@ -363,80 +408,115 @@ pub fn start_audio_thread(
                                      }
                                  }
                              }
-                              AudioMessage::TwoOpSetLegato { enabled } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetLegato { track_id, enabled } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_legato(enabled);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetRealtimeUpdate { enabled } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetRealtimeUpdate { track_id, enabled } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_realtime_update(enabled);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetMode { mode } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetMode { track_id, mode } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_mode(mode);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetOsc1Waveform { waveform } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetOsc1Waveform { track_id, waveform } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_osc1_waveform(waveform);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetOsc2Waveform { waveform } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetOsc2Waveform { track_id, waveform } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_osc2_waveform(waveform);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetOsc1Adsr { a, d, s, r } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetOsc1Adsr { track_id, a, d, s, r } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_osc1_adsr(a, d, s, r);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetOsc2Adsr { a, d, s, r } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetOsc2Adsr { track_id, a, d, s, r } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_osc2_adsr(a, d, s, r);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetFilterAdsr { a, d, s, r } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetFilterAdsr { track_id, a, d, s, r } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_filter_adsr(a, d, s, r);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetFilterParams { cutoff, q, filter_type } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetFilterParams { track_id, cutoff, q, filter_type } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_filter_params(cutoff, q, filter_type);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetFilterMod { enabled, amount } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetFilterMod { track_id, enabled, amount } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_filter_mod(enabled, amount);
                                       }
                                   }
                               }
-                              AudioMessage::TwoOpSetModulationParams { index, ratio, detune } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                              AudioMessage::TwoOpSetModulationParams { track_id, index, ratio, detune } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_modulation_params(index, ratio, detune);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetOsc2Feedback { track_id, feedback } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_osc2_feedback(feedback);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetWavefold { track_id, gain, mix } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_wavefold(gain, mix);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetNoise { track_id, carrier_noise, modulator_noise } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_noise(carrier_noise, modulator_noise);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetPitchSweep { track_id, depth, decay } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_pitch_sweep(depth, decay);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetLfo { track_id, waveform, speed, mod_index, cutoff } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_lfo(waveform, speed, mod_index, cutoff);
                                       }
                                   }
                               }
@@ -818,6 +898,25 @@ pub fn start_audio_thread(
                             AudioMessage::SetTrackCompSidechain { track_id, enabled } => {
                                 if track_id < mixer.tracks.len() {
                                     mixer.tracks[track_id].fx_chain.compressor_sidechain = enabled;
+                                }
+                            }
+                            AudioMessage::SetTrackDistortionMode { track_id, mode } => {
+                                if track_id < mixer.tracks.len() {
+                                    let mode_enum = DistortionMode::from_i32(mode);
+                                    mixer.tracks[track_id].fx_chain.distortion_l.mode = mode_enum;
+                                    mixer.tracks[track_id].fx_chain.distortion_r.mode = mode_enum;
+                                }
+                            }
+                            AudioMessage::SetTrackDistortionDrive { track_id, drive } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.distortion_l.drive = drive;
+                                    mixer.tracks[track_id].fx_chain.distortion_r.drive = drive;
+                                }
+                            }
+                            AudioMessage::SetTrackDistortionMix { track_id, mix } => {
+                                if track_id < mixer.tracks.len() {
+                                    mixer.tracks[track_id].fx_chain.distortion_l.mix = mix;
+                                    mixer.tracks[track_id].fx_chain.distortion_r.mix = mix;
                                 }
                             }
                             AudioMessage::SetMasterWlDrop { drop } => {

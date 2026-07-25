@@ -49,6 +49,27 @@ pub struct TwoOpPatch {
     pub osc2_detune: f32,
     /// Operator 2 pitch multiplier ratio relative to Carrier.
     pub osc2_ratio: f32,
+    
+    // PM Feedback
+    pub osc2_feedback: f32,
+    
+    // Wavefolder parameters
+    pub wavefold_gain: f32,
+    pub wavefold_mix: f32,
+
+    // Phase Noise parameters
+    pub carrier_noise: f32,
+    pub modulator_noise: f32,
+
+    // Pitch sweep parameters
+    pub pitch_sweep_depth: f32, // in semitones (e.g. -48.0 to 48.0)
+    pub pitch_sweep_decay: f32, // in seconds
+
+    // Voice LFO parameters
+    pub lfo_waveform: usize,
+    pub lfo_speed: f32,
+    pub lfo_mod_index: f32,
+    pub lfo_cutoff: f32,
 }
 
 impl Default for TwoOpPatch {
@@ -69,6 +90,17 @@ impl Default for TwoOpPatch {
             modulation_index: 1.0,
             osc2_detune: 0.0,
             osc2_ratio: 1.0,
+            osc2_feedback: 0.0,
+            wavefold_gain: 1.0,
+            wavefold_mix: 0.0,
+            carrier_noise: 0.0,
+            modulator_noise: 0.0,
+            pitch_sweep_depth: 0.0,
+            pitch_sweep_decay: 0.1,
+            lfo_waveform: 0,
+            lfo_speed: 2.0,
+            lfo_mod_index: 0.0,
+            lfo_cutoff: 0.0,
         }
     }
 }

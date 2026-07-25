@@ -15,6 +15,7 @@ pub use am_ring_mod::{AmRingMod, ModulationSource};
 pub use delay::{StereoDelay, DelayMode};
 pub use fx_chain::FxChain;
 pub use waveloss::WaveLoss;
+pub use distortion::{Distortion, DistortionMode};
 
 /// A trait for generating or processing a single frame of audio data.
 pub trait AudioNode {

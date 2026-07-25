@@ -61,7 +61,7 @@ The following ASCII diagram illustrates the audio signal path from the instrumen
                                                     +-----------------+
                                                              |
                                                              v
-                                                     Stereo Output (DAC)
+                                                    Stereo Output (DAC)
 ```
 
 ### Track FxChain Detail
@@ -76,6 +76,11 @@ Each track owns an independent `FxChain` containing a sequential arrangement of 
                                       v           v
                                  +---------+ +---------+
                                  |AmRingMod| |AmRingMod| <--- Sidechain (optional)
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
+                                 +---------+ +---------+
+                                 |Distortn | |Distortn |
                                  +---------+ +---------+
                                       |           |
                                       v           v
@@ -161,6 +166,27 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | `/track/<id>/mute` | `i`/`b` | Mute (1 or true) or unmute (0 or false) the track. |
 | `/track/<id>/send/delay` | `f` | Send level (0.0 to 1.0) of this track's signal to the return delay track. |
 
+### Track FX Chain Controls
+
+Each track features an independent effects chain that can be modulated in real-time via OSC:
+
+| Address | Arguments | Description |
+| :--- | :--- | :--- |
+| `/track/<id>/fx/filter/position` | `f` | DJ filter position from `-1.0` (Low-Pass) to `1.0` (High-Pass). `0.0` is bypass. |
+| `/track/<id>/fx/ring_mod/mode` | `i`/`b` | Enable/disable Ring Modulation (0: Off, 1: On). |
+| `/track/<id>/fx/ring_mod/source` | `i` | Carrier source (0: Sine oscillator, 1: Self-modulation, 2: Sidechain input). |
+| `/track/<id>/fx/ring_mod/depth` | `f` | Wet/dry modulation mix (0.0 to 1.0). |
+| `/track/<id>/fx/ring_mod/freq` | `f` | Carrier oscillator frequency in Hz. |
+| `/track/<id>/fx/distortion/mode` | `i` | Saturation mode (0: Bypass, 1: Tanh, 2: HardClip, 3: Wavefold). |
+| `/track/<id>/fx/distortion/drive` | `f` | Distortion input gain/drive factor (0.0 to 10.0). |
+| `/track/<id>/fx/distortion/mix` | `f` | Wet/dry distortion mix (0.0 to 1.0). |
+| `/track/<id>/fx/compressor/ratio` | `f` | Compression ratio (1.0 to 20.0). |
+| `/track/<id>/fx/compressor/threshold`| `f` | Threshold in dB (-60.0 to 0.0). |
+| `/track/<id>/fx/compressor/attack` | `f` | Attack time in seconds. |
+| `/track/<id>/fx/compressor/release` | `f` | Release time in seconds. |
+| `/track/<id>/fx/compressor/makeup` | `f` | Makeup gain in dB. |
+| `/track/<id>/fx/compressor/sidechain`| `i`/`b` | Enable sidechain compression modulated by external source. |
+
 ### Note Control (Available on all Tracks)
 
 | Address | Arguments | Description |
@@ -235,7 +261,7 @@ A stable, Zero-Delay Feedback (ZDF) 4-pole resonant ladder filter mimicking tran
 | :--- | :--- | :--- |
 | `/track/<id>/realtime` | `i` | 0: **Polytimbral** (default). 1: **Monotimbral** (Global updates). |
 | `/track/<id>/legato` | `i` | 0/1: Enables legato (mono mode only) to skip envelope re-triggering. |
-| `/track/<id>/mode` | `i` | 0: Additive, 1: AM, 2: RM, 3: FM |
+| `/track/<id>/mode` | `i` | 0: Additive, 1: AM, 2: RM, 3: FM (PM implementation) |
 | `/track/<id>/osc1/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
 | `/track/<id>/osc2/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
 | `/track/<id>/mod/params` | `fff` | `[index, ratio, detune]` FM/AM/RM intensity and tuning. |
@@ -244,6 +270,11 @@ A stable, Zero-Delay Feedback (ZDF) 4-pole resonant ladder filter mimicking tran
 | `/track/<id>/filter/adsr` | `ffff` | `[A, D, S, R]` Cutoff modulation envelope. |
 | `/track/<id>/filter/params` | `ffi` | `[cutoff, Q, type]` (Type: 0:LP, 1:HP, 2:BP, 3:Notch). |
 | `/track/<id>/filter/mod` | `bf` | `[enabled, amount]` Enable envelope modulation and set depth (Hz). |
+| `/track/<id>/feedback` | `f` | `[feedback]` Modulator self-feedback amount (0.0 to 1.0) to morph sines to saws/noise. |
+| `/track/<id>/wavefold` | `ff` | `[gain, mix]` Modulator wavefolder input gain (1.0 to 10.0) and dry/wet mix (0.0 to 1.0). |
+| `/track/<id>/noise` | `ff` | `[carrier_noise, modulator_noise]` Phase noise injection amounts (0.0 to 1.0) for glitch textures. |
+| `/track/<id>/pitch/sweep` | `ff` | `[depth_semitones, decay_sec]` Pitch envelope sweep range (-48 to +48 semitones) and decay time. |
+| `/track/<id>/lfo` | `ifff` | `[waveform, speed_hz, mod_index_depth, cutoff_depth]` Voice LFO config (Waveform: 0:Sine, 1:Tri, 2:Saw, 3:Square, 4:S&H). |
 
 ### Track 1, 2, 3 & 5: Sampler
 
