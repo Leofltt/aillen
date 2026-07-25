@@ -26,6 +26,18 @@ pub fn parse_mixer_command(addr: &str, msg: &OscMessage, prod: &Sender<AudioMess
             let mode = arg.clone().int().unwrap_or(1) as usize;
             let _ = prod.try_send(AudioMessage::SetMasterWlMode { mode });
         }
+    } else if addr == "/mixer/master/limiter/gain" {
+        if let Some(gain) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            let _ = prod.try_send(AudioMessage::SetMasterLimiterGain { gain });
+        }
+    } else if addr == "/mixer/master/limiter/release" {
+        if let Some(rel) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            let _ = prod.try_send(AudioMessage::SetMasterLimiterRelease { release: rel });
+        }
+    } else if addr == "/mixer/master/limiter/ceiling" {
+        if let Some(ceil) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            let _ = prod.try_send(AudioMessage::SetMasterLimiterCeiling { ceiling: ceil });
+        }
     } else if addr == "/mixer/return/delay/time" {
         if let Some(time) = msg.args.get(0).and_then(|a| a.clone().float()) {
             let _ = prod.try_send(AudioMessage::SetReturnDelayTime { time });

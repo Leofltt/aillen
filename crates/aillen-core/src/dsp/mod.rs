@@ -9,6 +9,7 @@ pub mod fx_chain;
 pub mod waveloss;
 pub mod lfo;
 pub mod distortion;
+pub mod limiter;
 
 pub use compressor::Compressor;
 pub use am_ring_mod::{AmRingMod, ModulationSource};
@@ -16,6 +17,7 @@ pub use delay::{StereoDelay, DelayMode};
 pub use fx_chain::FxChain;
 pub use waveloss::WaveLoss;
 pub use distortion::{Distortion, DistortionMode};
+pub use limiter::Limiter;
 
 /// A trait for generating or processing a single frame of audio data.
 pub trait AudioNode {

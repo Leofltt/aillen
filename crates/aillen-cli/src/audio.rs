@@ -324,6 +324,9 @@ pub enum AudioMessage {
     SetTrackDistortionMode { track_id: usize, mode: i32 },
     SetTrackDistortionDrive { track_id: usize, drive: f32 },
     SetTrackDistortionMix { track_id: usize, mix: f32 },
+    SetMasterLimiterGain { gain: f32 },
+    SetMasterLimiterRelease { release: f32 },
+    SetMasterLimiterCeiling { ceiling: f32 },
     SetMasterWlDrop { drop: usize },
     SetMasterWlOutof { outof: usize },
     SetMasterWlMode { mode: usize },
@@ -918,6 +921,15 @@ pub fn start_audio_thread(
                                     mixer.tracks[track_id].fx_chain.distortion_l.mix = mix;
                                     mixer.tracks[track_id].fx_chain.distortion_r.mix = mix;
                                 }
+                            }
+                            AudioMessage::SetMasterLimiterGain { gain } => {
+                                mixer.master_limiter.threshold_gain = gain;
+                            }
+                            AudioMessage::SetMasterLimiterRelease { release } => {
+                                mixer.master_limiter.release_s = release;
+                            }
+                            AudioMessage::SetMasterLimiterCeiling { ceiling } => {
+                                mixer.master_limiter.ceiling = ceiling;
                             }
                             AudioMessage::SetMasterWlDrop { drop } => {
                                 mixer.master_waveloss_l.drop = drop;

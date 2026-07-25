@@ -161,6 +161,9 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | `/mixer/master/waveloss/drop` | `i` | Master WaveLoss drop segments count. |
 | `/mixer/master/waveloss/outof` | `i` | Master WaveLoss total segments per cycle. |
 | `/mixer/master/waveloss/mode` | `i` | Master WaveLoss mode (1 = deterministic, 2 = random). |
+| `/mixer/master/limiter/gain` | `f` | Pre-limiter gain boost (1.0 to 10.0+). |
+| `/mixer/master/limiter/release` | `f` | Limiter release time in seconds (e.g. 0.01 to 1.0). |
+| `/mixer/master/limiter/ceiling` | `f` | Brickwall output ceiling (typically 0.99 for -0.1 dBFS). |
 | `/track/<id>/volume` | `f` | Individual track volume gain factor. |
 | `/track/<id>/pan` | `f` | Track panning position from `-1.0` (Hard Left) to `1.0` (Hard Right). |
 | `/track/<id>/mute` | `i`/`b` | Mute (1 or true) or unmute (0 or false) the track. |

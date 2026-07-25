@@ -5,7 +5,7 @@ use crate::synth::sampler::Sampler;
 use crate::synth::synth303::synth303::Synth303;
 use crate::synth::hubass::hubass::SynthHubass;
 use crate::dsp::filter::DjFilter;
-use crate::dsp::{AudioProcessor, FxChain, StereoProcessor, StereoDelay, WaveLoss};
+use crate::dsp::{AudioProcessor, FxChain, StereoProcessor, StereoDelay, WaveLoss, Limiter};
 
 /// A single channel strip hosting an instrument, volume level, stereo panner, and mute option.
 pub struct Track {
@@ -95,6 +95,8 @@ pub struct Mixer {
     pub master_waveloss_l: WaveLoss,
     /// Master wavelosser right channel.
     pub master_waveloss_r: WaveLoss,
+    /// Master look-ahead limiter at the end of the chain.
+    pub master_limiter: Limiter,
 }
 
 impl Mixer {
@@ -131,6 +133,7 @@ impl Mixer {
             return_delay,
             master_waveloss_l: WaveLoss::new(),
             master_waveloss_r: WaveLoss::new(),
+            master_limiter: Limiter::new(sample_rate, 2.0),
         }
     }
 
@@ -186,7 +189,7 @@ impl Mixer {
             self.master_waveloss_l.process(filt_l),
             self.master_waveloss_r.process(filt_r),
         );
-        (final_l, final_r)
+        self.master_limiter.process_stereo(final_l, final_r)
     }
 
     /// Processes a single frame and returns both per-track outputs and the final master output.
@@ -227,7 +230,8 @@ impl Mixer {
         let final_l = self.master_waveloss_l.process(filt_l);
         let final_r = self.master_waveloss_r.process(filt_r);
 
-        (track_outs, (final_l, final_r))
+        let (limited_l, limited_r) = self.master_limiter.process_stereo(final_l, final_r);
+        (track_outs, (limited_l, limited_r))
     }
 }
 

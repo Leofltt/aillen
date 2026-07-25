@@ -61,7 +61,12 @@ impl AudioProcessor for ResonantLadderFilter {
             val = y;
         }
 
-        // Prevent denormals
+        // Prevent denormals in internal states and output
+        for state in &mut self.s {
+            if state.abs() < 1e-15 { *state = 0.0; }
+        }
+        if self.hp_state.abs() < 1e-15 { self.hp_state = 0.0; }
+        
         if val.abs() < 1e-15 { 0.0 } else { val }
     }
 }

@@ -137,7 +137,10 @@ impl AudioProcessor for BiquadFilter {
         self.z1 = self.a1 * input - self.b1 * out + self.z2;
         self.z2 = self.a2 * input - self.b2 * out;
         
-        // Prevent denormals
+        // Prevent denormals in internal state and output
+        if self.z1.abs() < 1e-15 { self.z1 = 0.0; }
+        if self.z2.abs() < 1e-15 { self.z2 = 0.0; }
+        
         if out.abs() < 1e-15 { 0.0 } else { out }
     }
 }
