@@ -2,6 +2,8 @@
 pub mod two_op;
 /// Sampler module.
 pub mod sampler;
+/// Synth303 module.
+pub mod synth303;
 
 use crate::dsp::AudioNode;
 

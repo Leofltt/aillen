@@ -71,6 +71,7 @@ impl UiData {
                 3 => "Track 3: Sampler".to_string(),
                 4 => "Track 4: TwoOp".to_string(),
                 5 => "Track 5: Sampler".to_string(),
+                6 => "Track 6: Synth303".to_string(),
                 _ => format!("Track {}", i),
             };
             track_names.push(name);

@@ -333,6 +333,81 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::SamplerSetStutterCount { count });
             }
         }
+        // Synth303 specific (Track 6)
+        "303/waveform" if track_id == 6 => {
+            if let Some(arg) = msg.args.get(0) {
+                let wf_idx = arg.clone().int().unwrap_or(1);
+                let waveform = match wf_idx {
+                    0 => Waveform::Sine, 1 => Waveform::Saw, 2 => Waveform::Square, 3 => Waveform::Triangle, _ => Waveform::Saw,
+                };
+                let _ = prod.try_send(AudioMessage::Synth303SetWaveform { waveform });
+            }
+        }
+        "303/amp/adsr" if track_id == 6 => {
+            if msg.args.len() >= 4 {
+                let a = msg.args[0].clone().float().unwrap_or(0.002);
+                let d = msg.args[1].clone().float().unwrap_or(0.3);
+                let s = msg.args[2].clone().float().unwrap_or(0.1);
+                let r = msg.args[3].clone().float().unwrap_or(0.2);
+                let _ = prod.try_send(AudioMessage::Synth303SetAmpAdsr { a, d, s, r });
+            }
+        }
+        "303/filter/adsr" if track_id == 6 => {
+            if msg.args.len() >= 4 {
+                let a = msg.args[0].clone().float().unwrap_or(0.002);
+                let d = msg.args[1].clone().float().unwrap_or(0.25);
+                let s = msg.args[2].clone().float().unwrap_or(0.05);
+                let r = msg.args[3].clone().float().unwrap_or(0.2);
+                let _ = prod.try_send(AudioMessage::Synth303SetFilterAdsr { a, d, s, r });
+            }
+        }
+        "303/pitch/adsr" if track_id == 6 => {
+            if msg.args.len() >= 4 {
+                let a = msg.args[0].clone().float().unwrap_or(0.002);
+                let d = msg.args[1].clone().float().unwrap_or(0.1);
+                let s = msg.args[2].clone().float().unwrap_or(0.0);
+                let r = msg.args[3].clone().float().unwrap_or(0.1);
+                let _ = prod.try_send(AudioMessage::Synth303SetPitchAdsr { a, d, s, r });
+            }
+        }
+        "303/filter/params" if track_id == 6 => {
+            if msg.args.len() >= 2 {
+                let cutoff = msg.args[0].clone().float().unwrap_or(300.0);
+                let resonance = msg.args[1].clone().float().unwrap_or(0.75);
+                let _ = prod.try_send(AudioMessage::Synth303SetFilterParams { cutoff, resonance });
+            }
+        }
+        "303/filter/mod" if track_id == 6 => {
+            if let Some(amount) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::Synth303SetFilterMod { amount });
+            }
+        }
+        "303/pitch/mod" if track_id == 6 => {
+            if let Some(amount) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::Synth303SetPitchMod { amount });
+            }
+        }
+        "303/pwm/params" if track_id == 6 => {
+            if msg.args.len() >= 3 {
+                let pw = msg.args[0].clone().float().unwrap_or(0.5);
+                let rate = msg.args[1].clone().float().unwrap_or(1.0);
+                let depth = msg.args[2].clone().float().unwrap_or(0.0);
+                let _ = prod.try_send(AudioMessage::Synth303SetPwmParams { pw, rate, depth });
+            }
+        }
+        "303/glide" if track_id == 6 => {
+            if let Some(seconds) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::Synth303SetGlideTime { seconds });
+            }
+        }
+        "303/legato" if track_id == 6 => {
+            if let Some(arg) = msg.args.get(0) {
+                let enabled = match arg {
+                    rosc::OscType::Bool(b) => *b, rosc::OscType::Int(i) => *i > 0, rosc::OscType::Float(f) => *f > 0.5, _ => false,
+                };
+                let _ = prod.try_send(AudioMessage::Synth303SetLegato { enabled });
+            }
+        }
         _ => {}
     }
 }

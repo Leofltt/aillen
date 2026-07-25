@@ -65,6 +65,7 @@ The following ASCII diagram illustrates the audio signal path from the instrumen
 ```
 
 ### Track FxChain Detail
+
 Each track owns an independent `FxChain` containing a sequential arrangement of stereo processors:
 
 ```
@@ -132,9 +133,15 @@ cargo run -p aillen-cli -- --device-index 2
 
 ## 2. Audio Mixer & Instrument Tracks
 
-The engine supports a stereo Mixer with exactly two instrument tracks and one delay return track:
+The engine supports a stereo Mixer with 7 instrument tracks and one delay return track:
+
 - **Track 0**: `TwoOp` (FM Synth)
 - **Track 1**: `Sampler` (Sample playback engine with multi-format support via Symphonia)
+- **Track 2**: `Sampler`
+- **Track 3**: `Sampler`
+- **Track 4**: `TwoOp` (FM Synth)
+- **Track 5**: `Sampler`
+- **Track 6**: `Synth303` (Roland 303-like monophonic/legato bass synth)
 - **Return Track**: A stereo delay effect track (100% wet by default).
 
 All OSC messages must target the appropriate track path (`/track/<id>/`) or mixer path (`/mixer/`).
@@ -153,13 +160,13 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | `/track/<id>/mute` | `i`/`b` | Mute (1 or true) or unmute (0 or false) the track. |
 | `/track/<id>/send/delay` | `f` | Send level (0.0 to 1.0) of this track's signal to the return delay track. |
 
-### Note Control (Available on both Tracks)
+### Note Control (Available on all Tracks)
 
 | Address | Arguments | Description |
 | :--- | :--- | :--- |
 | `/track/<id>/note/on` | `ff` | `[freq, velocity]` Triggers a note. |
 | `/track/<id>/note/off` | `f` | `[freq]` Releases a specific frequency, or all notes if no arg. |
-| `/track/<id>/note` | `fff` | `[freq, duration_ms, velocity]` Plays a timed note (Track 0 only). |
+| `/track/<id>/note` | `fff` | `[freq, duration_ms, velocity]` Plays a timed note (Track 0, 4, and 6 only). |
 
 ---
 
@@ -168,65 +175,90 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 The core DSP library offers several high-quality effects modules:
 
 ### 1. Compressor (`aillen_core::dsp::Compressor`)
+
 A sidechainable peak-detecting dynamics processor.
-* **Bypassed by default** (Ratio = 1.0).
-* **Controls**: Threshold (dB), Ratio, Attack (seconds), Release (seconds), Makeup Gain (dB).
-* **Sidechaining**: Can compress the signal based on a secondary input channel.
+- **Bypassed by default** (Ratio = 1.0).
+- **Controls**: Threshold (dB), Ratio, Attack (seconds), Release (seconds), Makeup Gain (dB).
+- **Sidechaining**: Can compress the signal based on a secondary input channel.
 
 ### 2. AM / Ring Modulator (`aillen_core::dsp::AmRingMod`)
+
 A modulation processor supporting multiple carriers.
-* **Bypassed by default** (Depth = 0.0).
-* **Source selection**:
+- **Bypassed by default** (Depth = 0.0).
+- **Source selection**:
   - `Sine`: Internal sine wave oscillator (uses adjustable Frequency).
   - `SelfMod`: Modulates input with itself.
   - `Sidechain`: Modulates input with an external sidechain signal.
-* **Controls**: Depth/Mix (0.0 to 1.0), Frequency (Hz), Ring Mod mode (true/false).
+- **Controls**: Depth/Mix (0.0 to 1.0), Frequency (Hz), Ring Mod mode (true/false).
 
 ### 3. Stereo Delay (`aillen_core::dsp::StereoDelay`)
+
 A dual-mode stereo processor containing:
-* **Tape Delay**: Simulated tape-loop delay. Featuring linear fractional-delay interpolation (for pitch glide sweeps), adjustable feedback, warm drive/saturation, and ping-pong routing.
-* **Granular Delay**: Slices incoming audio into overlapping windowed grains. Featuring configurable grain size (10ms–500ms), active density (1–8 active grains), pitch playback ratios (0.5x–2.0x), and randomized spray/jitter offsets.
+- **Tape Delay**: Simulated tape-loop delay. Featuring linear fractional-delay interpolation (for pitch glide sweeps), adjustable feedback, warm drive/saturation, and ping-pong routing.
+- **Granular Delay**: Slices incoming audio into overlapping windowed grains. Featuring configurable grain size (10ms–500ms), active density (1–8 active grains), pitch playback ratios (0.5x–2.0x), and randomized spray/jitter offsets.
 
 ### 4. WaveLoss (`aillen_core::dsp::WaveLoss`)
+
 A zero-crossing wave-dropping distortion processor applied globally at the master output.
-* **Bypassed by default** (`drop = 0`).
-* **Controls**: Drop count, Outof cycle total segments, Mode (1 = deterministic, 2 = random).
+- **Bypassed by default** (`drop = 0`).
+- **Controls**: Drop count, Outof cycle total segments, Mode (1 = deterministic, 2 = random).
 
 ---
 
 ## 4. Instrument-Specific Settings
 
-### Track 0: TwoOp Synth
+### Track 0 & 4: TwoOp Synth
 
 | Address | Argument | Description |
 | :--- | :--- | :--- |
-| `/track/0/realtime` | `i` | 0: **Polytimbral** (default). 1: **Monotimbral** (Global updates). |
-| `/track/0/legato` | `i` | 0/1: Enables legato (mono mode only) to skip envelope re-triggering. |
-| `/track/0/mode` | `i` | 0: Additive, 1: AM, 2: RM, 3: FM |
-| `/track/0/osc1/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
-| `/track/0/osc2/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
-| `/track/0/mod/params` | `fff` | `[index, ratio, detune]` FM/AM/RM intensity and tuning. |
-| `/track/0/osc1/adsr` | `ffff` | `[A, D, S, R]` Amplitude envelope (Sec, Sec, 0.0-1.0, Sec). |
-| `/track/0/osc2/adsr` | `ffff` | `[A, D, S, R]` Modulator envelope. |
-| `/track/0/filter/adsr` | `ffff` | `[A, D, S, R]` Cutoff modulation envelope. |
-| `/track/0/filter/params` | `ffi` | `[cutoff, Q, type]` (Type: 0:LP, 1:HP, 2:BP, 3:Notch). |
-| `/track/0/filter/mod` | `bf` | `[enabled, amount]` Enable envelope modulation and set depth (Hz). |
+| `/track/<id>/realtime` | `i` | 0: **Polytimbral** (default). 1: **Monotimbral** (Global updates). |
+| `/track/<id>/legato` | `i` | 0/1: Enables legato (mono mode only) to skip envelope re-triggering. |
+| `/track/<id>/mode` | `i` | 0: Additive, 1: AM, 2: RM, 3: FM |
+| `/track/<id>/osc1/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
+| `/track/<id>/osc2/waveform` | `i` | 0: Sine, 1: Saw, 2: Square, 3: Triangle |
+| `/track/<id>/mod/params` | `fff` | `[index, ratio, detune]` FM/AM/RM intensity and tuning. |
+| `/track/<id>/osc1/adsr` | `ffff` | `[A, D, S, R]` Amplitude envelope (Sec, Sec, 0.0-1.0, Sec). |
+| `/track/<id>/osc2/adsr` | `ffff` | `[A, D, S, R]` Modulator envelope. |
+| `/track/<id>/filter/adsr` | `ffff` | `[A, D, S, R]` Cutoff modulation envelope. |
+| `/track/<id>/filter/params` | `ffi` | `[cutoff, Q, type]` (Type: 0:LP, 1:HP, 2:BP, 3:Notch). |
+| `/track/<id>/filter/mod` | `bf` | `[enabled, amount]` Enable envelope modulation and set depth (Hz). |
 
-### Track 1: Sampler
+### Track 1, 2, 3 & 5: Sampler
 
 Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 
 | Address | Argument | Description |
 | :--- | :--- | :--- |
-| `/track/1/sample/load` | `s` | `[path]` Loads an audio file from disk into the sampler in real-time. |
-| `/track/1/sample/select` | `s` | `[name]` Selects a preloaded sample by its relative path inside the `SampleBank`. |
-| `/track/1/sample/mode` | `i` | `[mode]` 0: OneShot (default), 1: Loop. |
-| `/track/1/sample/pitch` | `f` | `[ratio]` Base pitch shifting factor (default 1.0). |
-| `/track/1/sample/speed` | `f` | `[ratio]` Base playback speed factor (default 1.0). |
-| `/track/1/sample/mode/stretch`| `i` | `[stretch_mode]` 0: Resample (default), 1: Granular (independent pitch/time). |
-| `/track/1/sample/grain_size` | `f` | `[size_ms]` Granular grain size duration in milliseconds (default 40.0). |
-| `/track/1/sample/overlap` | `i` | `[overlap]` Overlapping grain count from 1 to 16 (default 4). |
-| `/track/1/filter` | `f` | Sampler output channel DJ filter position from `-1.0` (LP) to `1.0` (HP). Center `0.0` is bypass. |
+| `/track/<id>/sample/load` | `s` | `[path]` Loads an audio file from disk into the sampler in real-time. |
+| `/track/<id>/sample/select` | `s` | `[name]` Selects a preloaded sample by its relative path inside the `SampleBank`. |
+| `/track/<id>/sample/mode` | `i` | `[mode]` 0: OneShot (default), 1: Loop. |
+| `/track/<id>/sample/pitch` | `f` | `[ratio]` Base pitch shifting factor (default 1.0). |
+| `/track/<id>/sample/speed` | `f` | `[ratio]` Base playback speed factor (default 1.0). |
+| `/track/<id>/sample/mode/stretch`| `i` | `[stretch_mode]` 0: Resample (default), 1: Granular (independent pitch/time). |
+| `/track/<id>/sample/grain_size` | `f` | `[size_ms]` Granular grain size duration in milliseconds (default 40.0). |
+| `/track/<id>/sample/overlap` | `i` | `[overlap]` Overlapping grain count from 1 to 16 (default 4). |
+| `/track/<id>/filter` | `f` | Sampler output channel DJ filter position from `-1.0` (LP) to `1.0` (HP). Center `0.0` is bypass. |
+| `/track/<id>/sample/slice/mode` | `i`/`b` | Enable/disable slice-playback mode. |
+| `/track/<id>/sample/slice/count` | `i` | Total number of slices to segment the sample buffer into. |
+| `/track/<id>/sample/slice/select` | `i` | Select active slice index. |
+| `/track/<id>/sample/slice/stutter` | `i` | Stutter repetition count for slice re-triggering. |
+
+### Track 6: Synth303 (Acid Bass Synth)
+
+A monophonic, legato-enabled synthesizer mimicking the Roland TB-303.
+
+| Address | Argument | Description |
+| :--- | :--- | :--- |
+| `/track/6/303/waveform` | `i` | Oscillator waveform. 0: Sine, 1: Saw (default), 2: Square, 3: Triangle. |
+| `/track/6/303/amp/adsr` | `ffff` | `[A, D, S, R]` Amplitude envelope parameters in seconds (sustain is 0.0-1.0). |
+| `/track/6/303/filter/adsr` | `ffff` | `[A, D, S, R]` Filter cutoff envelope parameters. |
+| `/track/6/303/pitch/adsr` | `ffff` | `[A, D, S, R]` Pitch envelope parameters. |
+| `/track/6/303/filter/params` | `ff` | `[cutoff, resonance]` Set base cutoff frequency (Hz) and resonance (0.0 to 1.0). |
+| `/track/6/303/filter/mod` | `f` | Cutoff envelope modulation depth (Hz). |
+| `/track/6/303/pitch/mod` | `f` | Pitch envelope modulation depth (Hz). |
+| `/track/6/303/pwm/params` | `fff` | `[pw, rate, depth]` Set pulse width (0.05-0.95), PWM LFO frequency (Hz), and PWM depth (0.0-1.0). |
+| `/track/6/303/glide` | `f` | Glide/Portamento time in seconds (default 0.1s). |
+| `/track/6/303/legato` | `i`/`b` | Enable/disable legato (0: Off, 1: On). Defaults to On. |
 
 ---
 

@@ -4,6 +4,7 @@ use aillen_core::synth::sampler::{PlayMode, load_audio_file, StretchMode};
 use aillen_core::mixer::Mixer;
 use aillen_core::synth::two_op::two_op::TwoOpSynth;
 use aillen_core::synth::sampler::Sampler;
+use aillen_core::synth::synth303::synth303::Synth303;
 use anyhow::Result;
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -230,6 +231,18 @@ pub enum AudioMessage {
         position: f32
     },
     
+    // Synth303 specific (Track 6)
+    Synth303SetWaveform { waveform: Waveform },
+    Synth303SetAmpAdsr { a: f32, d: f32, s: f32, r: f32 },
+    Synth303SetFilterAdsr { a: f32, d: f32, s: f32, r: f32 },
+    Synth303SetPitchAdsr { a: f32, d: f32, s: f32, r: f32 },
+    Synth303SetFilterParams { cutoff: f32, resonance: f32 },
+    Synth303SetFilterMod { amount: f32 },
+    Synth303SetPitchMod { amount: f32 },
+    Synth303SetPwmParams { pw: f32, rate: f32, depth: f32 },
+    Synth303SetGlideTime { seconds: f32 },
+    Synth303SetLegato { enabled: bool },
+
     // FxChain & Return Track settings
     SetTrackSendDelay { track_id: usize, send: f32 },
     SetTrackRmDepth { track_id: usize, depth: f32 },
@@ -329,6 +342,8 @@ pub fn start_audio_thread(
                                          two_op.trigger_note(freq, vel, duration_ms);
                                      } else if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                          sampler.note_on(freq, vel);
+                                     } else if let Some(synth303) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                         synth303.trigger_note(freq, vel, duration_ms);
                                      }
                                  }
                              }
@@ -406,6 +421,76 @@ pub fn start_audio_thread(
                                   for track in &mut mixer.tracks {
                                       if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_modulation_params(index, ratio, detune);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetWaveform { waveform } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_waveform(waveform);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetAmpAdsr { a, d, s, r } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_amp_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetFilterAdsr { a, d, s, r } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_filter_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetPitchAdsr { a, d, s, r } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_pitch_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetFilterParams { cutoff, resonance } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_filter_params(cutoff, resonance);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetFilterMod { amount } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_filter_mod(amount);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetPitchMod { amount } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_pitch_mod(amount);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetPwmParams { pw, rate, depth } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_pwm_params(pw, rate, depth);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetGlideTime { seconds } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_glide_time(seconds);
+                                      }
+                                  }
+                              }
+                              AudioMessage::Synth303SetLegato { enabled } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
+                                          synth.set_legato(enabled);
                                       }
                                   }
                               }
