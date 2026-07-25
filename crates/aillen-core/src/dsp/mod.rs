@@ -7,6 +7,8 @@ pub mod am_ring_mod;
 pub mod delay;
 pub mod fx_chain;
 pub mod waveloss;
+pub mod lfo;
+pub mod distortion;
 
 pub use compressor::Compressor;
 pub use am_ring_mod::{AmRingMod, ModulationSource};

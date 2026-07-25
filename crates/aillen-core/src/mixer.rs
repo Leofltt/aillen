@@ -3,6 +3,7 @@ use crate::synth::PlayableInstrument;
 use crate::synth::two_op::two_op::TwoOpSynth;
 use crate::synth::sampler::Sampler;
 use crate::synth::synth303::synth303::Synth303;
+use crate::synth::hubass::hubass::SynthHubass;
 use crate::dsp::filter::DjFilter;
 use crate::dsp::{AudioProcessor, FxChain, StereoProcessor, StereoDelay, WaveLoss};
 
@@ -106,6 +107,7 @@ impl Mixer {
         let mut synth_track2 = Track::new(Box::new(TwoOpSynth::new(sample_rate, num_voices)), sample_rate);
         let mut sampler_track4 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
         let mut synth303_track = Track::new(Box::new(Synth303::new(sample_rate, 1)), sample_rate);
+        let mut hubass_track = Track::new(Box::new(SynthHubass::new(sample_rate, 1)), sample_rate);
         
         // Default cross-sidechaining configuration
         synth_track.sidechain_source = Some(1);
@@ -115,13 +117,14 @@ impl Mixer {
         synth_track2.sidechain_source = Some(1);
         sampler_track4.sidechain_source = None;
         synth303_track.sidechain_source = None;
+        hubass_track.sidechain_source = None;
         
 
         let mut return_delay = StereoDelay::new(sample_rate);
         return_delay.mix = 1.0; // Full on wet by default
 
         Self {
-            tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, synth_track2, sampler_track4, synth303_track],
+            tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, synth_track2, sampler_track4, synth303_track, hubass_track],
             master_volume: 1.0,
             master_filter_l: DjFilter::new(sample_rate),
             master_filter_r: DjFilter::new(sample_rate),

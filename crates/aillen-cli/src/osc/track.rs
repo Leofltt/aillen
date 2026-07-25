@@ -408,6 +408,88 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::Synth303SetLegato { enabled });
             }
         }
+        "hubass/amp/adsr" if track_id == 7 => {
+            if msg.args.len() >= 4 {
+                let a = msg.args[0].clone().float().unwrap_or(0.01);
+                let d = msg.args[1].clone().float().unwrap_or(0.1);
+                let s = msg.args[2].clone().float().unwrap_or(1.0);
+                let r = msg.args[3].clone().float().unwrap_or(0.1);
+                let _ = prod.try_send(AudioMessage::SynthHubassSetAmpAdsr { a, d, s, r });
+            }
+        }
+        "hubass/filter/params" if track_id == 7 => {
+            if msg.args.len() >= 4 {
+                let start_mult = msg.args[0].clone().float().unwrap_or(1.333);
+                let end_cf = msg.args[1].clone().float().unwrap_or(800.0);
+                let decay = msg.args[2].clone().float().unwrap_or(1.0);
+                let resonance = msg.args[3].clone().float().unwrap_or(0.4);
+                let _ = prod.try_send(AudioMessage::SynthHubassSetFilterParams { start_mult, end_cf, decay, resonance });
+            }
+        }
+        "hubass/osc/unison" if track_id == 7 => {
+            if msg.args.len() >= 4 {
+                let waveform = msg.args[0].clone().int().unwrap_or(0);
+                let detune = msg.args[1].clone().float().unwrap_or(0.035);
+                let spread = msg.args[2].clone().float().unwrap_or(0.8);
+                let num_voices = msg.args[3].clone().int().unwrap_or(5);
+                let _ = prod.try_send(AudioMessage::SynthHubassSetOscUnison { waveform, detune, spread, num_voices });
+            }
+        }
+        "hubass/osc/sub" if track_id == 7 => {
+            if msg.args.len() >= 3 {
+                let waveform = msg.args[0].clone().int().unwrap_or(0);
+                let octave_offset = msg.args[1].clone().int().unwrap_or(-1);
+                let gain = msg.args[2].clone().float().unwrap_or(0.7);
+                let _ = prod.try_send(AudioMessage::SynthHubassSetOscSub { waveform, octave_offset, gain });
+            }
+        }
+        "hubass/osc/noise" if track_id == 7 => {
+            if let Some(gain) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SynthHubassSetOscNoise { gain });
+            }
+        }
+        "hubass/filter/mode" if track_id == 7 => {
+            if let Some(mode) = msg.args.get(0).and_then(|a| a.clone().int()) {
+                let _ = prod.try_send(AudioMessage::SynthHubassSetFilterMode { mode });
+            }
+        }
+        "hubass/drive/mode" if track_id == 7 => {
+            if msg.args.len() >= 3 {
+                let mode = msg.args[0].clone().int().unwrap_or(1);
+                let gain = msg.args[1].clone().float().unwrap_or(2.0);
+                let mix = msg.args[2].clone().float().unwrap_or(0.5);
+                let _ = prod.try_send(AudioMessage::SynthHubassSetDriveMode { mode, gain, mix });
+            }
+        }
+        "hubass/lfo/1" if track_id == 7 => {
+            if msg.args.len() >= 4 {
+                let waveform = msg.args[0].clone().int().unwrap_or(0);
+                let speed_hz = msg.args[1].clone().float().unwrap_or(1.5);
+                let cutoff_depth = msg.args[2].clone().float().unwrap_or(0.0);
+                let pitch_depth = msg.args[3].clone().float().unwrap_or(0.0);
+                let _ = prod.try_send(AudioMessage::SynthHubassSetLfo1 { waveform, speed_hz, cutoff_depth, pitch_depth });
+            }
+        }
+        "hubass/chorus/params" if track_id == 7 => {
+            if msg.args.len() >= 2 {
+                let mix = msg.args[0].clone().float().unwrap_or(0.6);
+                let depth = msg.args[1].clone().float().unwrap_or(0.5);
+                let _ = prod.try_send(AudioMessage::SynthHubassSetChorusParams { mix, depth });
+            }
+        }
+        "hubass/legato" if track_id == 7 => {
+            if let Some(arg) = msg.args.get(0) {
+                let enabled = match arg {
+                    rosc::OscType::Bool(b) => *b, rosc::OscType::Int(i) => *i > 0, rosc::OscType::Float(f) => *f > 0.5, _ => false,
+                };
+                let _ = prod.try_send(AudioMessage::SynthHubassSetLegato { enabled });
+            }
+        }
+        "hubass/gain" if track_id == 7 => {
+            if let Some(gain) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SynthHubassSetOutputGain { gain });
+            }
+        }
         _ => {}
     }
 }

@@ -5,6 +5,7 @@ use aillen_core::mixer::Mixer;
 use aillen_core::synth::two_op::two_op::TwoOpSynth;
 use aillen_core::synth::sampler::Sampler;
 use aillen_core::synth::synth303::synth303::Synth303;
+use aillen_core::synth::hubass::hubass::SynthHubass;
 use anyhow::Result;
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -243,6 +244,19 @@ pub enum AudioMessage {
     Synth303SetGlideTime { seconds: f32 },
     Synth303SetLegato { enabled: bool },
 
+    // SynthHubass specific (Track 7)
+    SynthHubassSetAmpAdsr { a: f32, d: f32, s: f32, r: f32 },
+    SynthHubassSetFilterParams { start_mult: f32, end_cf: f32, decay: f32, resonance: f32 },
+    SynthHubassSetOscUnison { waveform: i32, detune: f32, spread: f32, num_voices: i32 },
+    SynthHubassSetOscSub { waveform: i32, octave_offset: i32, gain: f32 },
+    SynthHubassSetOscNoise { gain: f32 },
+    SynthHubassSetFilterMode { mode: i32 },
+    SynthHubassSetDriveMode { mode: i32, gain: f32, mix: f32 },
+    SynthHubassSetLfo1 { waveform: i32, speed_hz: f32, cutoff_depth: f32, pitch_depth: f32 },
+    SynthHubassSetChorusParams { mix: f32, depth: f32 },
+    SynthHubassSetLegato { enabled: bool },
+    SynthHubassSetOutputGain { gain: f32 },
+
     // FxChain & Return Track settings
     SetTrackSendDelay { track_id: usize, send: f32 },
     SetTrackRmDepth { track_id: usize, depth: f32 },
@@ -344,6 +358,8 @@ pub fn start_audio_thread(
                                          sampler.note_on(freq, vel);
                                      } else if let Some(synth303) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Synth303>() {
                                          synth303.trigger_note(freq, vel, duration_ms);
+                                     } else if let Some(hubass) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                         hubass.trigger_note(freq, vel, duration_ms);
                                      }
                                  }
                              }
@@ -491,6 +507,83 @@ pub fn start_audio_thread(
                                   for track in &mut mixer.tracks {
                                       if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<Synth303>() {
                                           synth.set_legato(enabled);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetAmpAdsr { a, d, s, r } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_amp_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetFilterParams { start_mult, end_cf, decay, resonance } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_filter_params(start_mult, end_cf, decay, resonance);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetOscUnison { waveform, detune, spread, num_voices } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_osc_unison(waveform, detune, spread, num_voices);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetOscSub { waveform, octave_offset, gain } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_osc_sub(waveform, octave_offset, gain);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetOscNoise { gain } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_osc_noise(gain);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetFilterMode { mode } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_filter_mode(mode);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetDriveMode { mode, gain, mix } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_drive_mode(mode, gain, mix);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetLfo1 { waveform, speed_hz, cutoff_depth, pitch_depth } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_lfo1(waveform, speed_hz, cutoff_depth, pitch_depth);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetChorusParams { mix, depth } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_chorus_params(mix, depth);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetLegato { enabled } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_legato(enabled);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SynthHubassSetOutputGain { gain } => {
+                                  for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
+                                          synth.set_output_gain(gain);
                                       }
                                   }
                               }

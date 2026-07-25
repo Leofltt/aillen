@@ -4,6 +4,8 @@ pub mod two_op;
 pub mod sampler;
 /// Synth303 module.
 pub mod synth303;
+/// Hubass synthesizer module.
+pub mod hubass;
 
 use crate::dsp::AudioNode;
 

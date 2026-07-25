@@ -133,7 +133,7 @@ cargo run -p aillen-cli -- --device-index 2
 
 ## 2. Audio Mixer & Instrument Tracks
 
-The engine supports a stereo Mixer with 7 instrument tracks and one delay return track:
+The engine supports a stereo Mixer with 8 instrument tracks and one delay return track:
 
 - **Track 0**: `TwoOp` (FM Synth)
 - **Track 1**: `Sampler` (Sample playback engine with multi-format support via Symphonia)
@@ -142,6 +142,7 @@ The engine supports a stereo Mixer with 7 instrument tracks and one delay return
 - **Track 4**: `TwoOp` (FM Synth)
 - **Track 5**: `Sampler`
 - **Track 6**: `Synth303` (Roland 303-like monophonic/legato bass synth)
+- **Track 7**: `SynthHubass` (Versatile Rave & Bass Synthesizer with detuned unison, filter-bypassed sub-bass, multi-mode filters, drive, LFO, and stereo chorus)
 - **Return Track**: A stereo delay effect track (100% wet by default).
 
 All OSC messages must target the appropriate track path (`/track/<id>/`) or mixer path (`/mixer/`).
@@ -166,7 +167,7 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | :--- | :--- | :--- |
 | `/track/<id>/note/on` | `ff` | `[freq, velocity]` Triggers a note. |
 | `/track/<id>/note/off` | `f` | `[freq]` Releases a specific frequency, or all notes if no arg. |
-| `/track/<id>/note` | `fff` | `[freq, duration_ms, velocity]` Plays a timed note (Track 0, 4, and 6 only). |
+| `/track/<id>/note` | `fff` | `[freq, duration_ms, velocity]` Plays a timed note (Track 0, 4, 6, and 7 only). |
 
 ---
 
@@ -202,6 +203,27 @@ A dual-mode stereo processor containing:
 A zero-crossing wave-dropping distortion processor applied globally at the master output.
 - **Bypassed by default** (`drop = 0`).
 - **Controls**: Drop count, Outof cycle total segments, Mode (1 = deterministic, 2 = random).
+
+### 5. Distortion (`aillen_core::dsp::distortion::Distortion`)
+
+A waveshaping distortion processor with configurable drive, wet/dry mix, and multiple modes:
+- `Bypass` (0)
+- `Tanh` (1): Soft-clipping hyperbolic tangent saturation.
+- `HardClip` (2): Hard clipping at threshold boundaries.
+- `Wavefold` (3): Sinusoidal wavefolding distortion.
+
+### 6. LFO (`aillen_core::dsp::lfo::Lfo`)
+
+A modular Low Frequency Oscillator supporting:
+- Sine (0), Triangle (1), Saw (2), Square (3), and Random Sample & Hold (4) waveforms.
+
+### 7. Formant Filter (`aillen_core::dsp::filter::formant::FormantFilter`)
+
+A parallel multi-peak bandpass filter modeling human vocal tract resonances. Supports smooth vocal sweeps by morphing a single `vowel` parameter from `0.0` to `1.0` spanning the phonetic vowels [A, E, I, O, U].
+
+### 8. ZDF Ladder Filter (`aillen_core::dsp::filter::ladder::ResonantLadderFilter`)
+
+A stable, Zero-Delay Feedback (ZDF) 4-pole resonant ladder filter mimicking transistor/diode ladder designs. Features resonance gain compensation and a high-pass feedback filter to prevent low-end bass cancellation.
 
 ---
 
@@ -259,6 +281,24 @@ A monophonic, legato-enabled synthesizer mimicking the Roland TB-303.
 | `/track/6/303/pwm/params` | `fff` | `[pw, rate, depth]` Set pulse width (0.05-0.95), PWM LFO frequency (Hz), and PWM depth (0.0-1.0). |
 | `/track/6/303/glide` | `f` | Glide/Portamento time in seconds (default 0.1s). |
 | `/track/6/303/legato` | `i`/`b` | Enable/disable legato (0: Off, 1: On). Defaults to On. |
+
+### Track 7: SynthHubass (Rave & Heavy Bass Synth)
+
+A massive, versatile synthesizer designed for heavy basslines and rave textures. It features a configurable detuned unison generator, a dedicated filter-bypassed sub oscillator, parallel stereo multi-mode filters (ZDF Ladder, ZDF Biquad, and Formant vowel filter), modular LFO modulation, waveshaping saturation/drive, and a stereo chorus unit.
+
+| Address | Argument | Description |
+| :--- | :--- | :--- |
+| `/track/7/hubass/amp/adsr` | `ffff` | `[A, D, S, R]` Amplitude envelope parameters in seconds. |
+| `/track/7/hubass/filter/params` | `ffff` | `[start_mult, end_cf, decay, resonance]` Cutoff envelope start frequency multiplier, target base cutoff (Hz), exponential decay rate (seconds), and resonance (0.0 to 1.0). |
+| `/track/7/hubass/osc/unison` | `fffi` | `[waveform (0:Saw, 1:Square, 2:Triangle), detune (0.0-0.2), spread (0.0-1.0), voices (1-7)]` Detuned unison generator config. |
+| `/track/7/hubass/osc/sub` | `iif` | `[waveform (0:Sine, 1:Triangle, 2:Square), octave (-1 or -2), gain (0.0-2.0)]` Filter-bypassed, clean mono sub-bass oscillator config. |
+| `/track/7/hubass/osc/noise` | `f` | `[gain]` Noise generator gain level (0.0 to 1.0). |
+| `/track/7/hubass/filter/mode` | `i` | `[mode]` Filter mode (0: ZDF LP, 1: ZDF BP, 2: Formant vowel morph). |
+| `/track/7/hubass/drive/mode` | `iff` | `[mode (0:Bypass, 1:Tanh, 2:HardClip, 3:Wavefold), gain (0.0-10.0), mix (0.0-1.0)]` Saturation/waveshaping distortion. |
+| `/track/7/hubass/lfo/1` | `ifff` | `[waveform (0:Sine, 1:Tri, 2:Saw, 3:Square, 4:S&H), speed (Hz), cutoff_depth, pitch_depth]` Modular LFO routing. |
+| `/track/7/hubass/chorus/params` | `ff` | `[mix, depth]` Stereo chorus mix and LFO depth. |
+| `/track/7/hubass/legato` | `i`/`b` | Enable/disable legato monophonic sliding (0: Off, 1: On). |
+| `/track/7/hubass/gain` | `f` | Master output gain multiplier (0.0 to 5.0). Defaults to 1.0. |
 
 ---
 

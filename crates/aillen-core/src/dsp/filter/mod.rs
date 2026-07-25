@@ -4,6 +4,8 @@ pub mod biquad;
 pub mod dj;
 /// Resonant 4-pole ZDF ladder filter.
 pub mod ladder;
+/// Formant filter implementation.
+pub mod formant;
 
 pub use biquad::{BiquadFilter, FilterType};
 pub use dj::DjFilter;
