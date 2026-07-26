@@ -17,7 +17,7 @@ The following ASCII diagram illustrates the audio signal path from the instrumen
 
 ```
                             +---------------------------------------+
-                            |              TRACK (0 or 1)           |
+                            |              TRACK                    |
                             |  +---------------+                 L  |
                             |  |  Instrument   |---------------+--->|
                             |  +---------------+               | R  |
@@ -156,6 +156,7 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 
 | Address | Arguments | Description |
 | :--- | :--- | :--- |
+| `/panic` / `/mixer/panic` | None | Panic command. Immediately silences all active notes on all tracks. |
 | `/mixer/master/volume` | `f` | Master output volume gain factor (e.g., 0.0 - 1.0+). |
 | `/mixer/master/filter` | `f` | Master output DJ filter position from `-1.0` (LP sweep) to `1.0` (HP sweep). Center `0.0` is bypass. |
 | `/mixer/master/waveloss/drop` | `i` | Master WaveLoss drop segments count. |
@@ -207,6 +208,7 @@ The core DSP library offers several high-quality effects modules:
 ### 1. Compressor (`aillen_core::dsp::Compressor`)
 
 A sidechainable peak-detecting dynamics processor.
+
 - **Bypassed by default** (Ratio = 1.0).
 - **Controls**: Threshold (dB), Ratio, Attack (seconds), Release (seconds), Makeup Gain (dB).
 - **Sidechaining**: Can compress the signal based on a secondary input channel.
@@ -214,6 +216,7 @@ A sidechainable peak-detecting dynamics processor.
 ### 2. AM / Ring Modulator (`aillen_core::dsp::AmRingMod`)
 
 A modulation processor supporting multiple carriers.
+
 - **Bypassed by default** (Depth = 0.0).
 - **Source selection**:
   - `Sine`: Internal sine wave oscillator (uses adjustable Frequency).
@@ -224,18 +227,21 @@ A modulation processor supporting multiple carriers.
 ### 3. Stereo Delay (`aillen_core::dsp::StereoDelay`)
 
 A dual-mode stereo processor containing:
+
 - **Tape Delay**: Simulated tape-loop delay. Featuring linear fractional-delay interpolation (for pitch glide sweeps), adjustable feedback, warm drive/saturation, and ping-pong routing.
 - **Granular Delay**: Slices incoming audio into overlapping windowed grains. Featuring configurable grain size (10ms–500ms), active density (1–8 active grains), pitch playback ratios (0.5x–2.0x), and randomized spray/jitter offsets.
 
 ### 4. WaveLoss (`aillen_core::dsp::WaveLoss`)
 
 A zero-crossing wave-dropping distortion processor applied globally at the master output.
+
 - **Bypassed by default** (`drop = 0`).
 - **Controls**: Drop count, Outof cycle total segments, Mode (1 = deterministic, 2 = random).
 
 ### 5. Distortion (`aillen_core::dsp::distortion::Distortion`)
 
 A waveshaping distortion processor with configurable drive, wet/dry mix, and multiple modes:
+
 - `Bypass` (0)
 - `Tanh` (1): Soft-clipping hyperbolic tangent saturation.
 - `HardClip` (2): Hard clipping at threshold boundaries.
@@ -244,6 +250,7 @@ A waveshaping distortion processor with configurable drive, wet/dry mix, and mul
 ### 6. LFO (`aillen_core::dsp::lfo::Lfo`)
 
 A modular Low Frequency Oscillator supporting:
+
 - Sine (0), Triangle (1), Saw (2), Square (3), and Random Sample & Hold (4) waveforms.
 
 ### 7. Formant Filter (`aillen_core::dsp::filter::formant::FormantFilter`)

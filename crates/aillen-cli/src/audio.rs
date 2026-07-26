@@ -330,6 +330,7 @@ pub enum AudioMessage {
     SetMasterWlDrop { drop: usize },
     SetMasterWlOutof { outof: usize },
     SetMasterWlMode { mode: usize },
+    GlobalPanic,
 }
 
 /// Lists all available host audio output devices and their indices.
@@ -942,6 +943,11 @@ pub fn start_audio_thread(
                             AudioMessage::SetMasterWlMode { mode } => {
                                 mixer.master_waveloss_l.mode = mode;
                                 mixer.master_waveloss_r.mode = mode;
+                            }
+                            AudioMessage::GlobalPanic => {
+                                for track in &mut mixer.tracks {
+                                    track.instrument.note_off_all();
+                                }
                             }
                         }
                     }

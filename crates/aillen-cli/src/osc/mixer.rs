@@ -3,7 +3,9 @@ use crossbeam_channel::Sender;
 use crate::audio::AudioMessage;
 
 pub fn parse_mixer_command(addr: &str, msg: &OscMessage, prod: &Sender<AudioMessage>) {
-    if addr == "/mixer/master/volume" {
+    if addr == "/panic" || addr == "/mixer/panic" {
+        let _ = prod.try_send(AudioMessage::GlobalPanic);
+    } else if addr == "/mixer/master/volume" {
         if let Some(vol) = msg.args.get(0).and_then(|a| a.clone().float()) {
             let _ = prod.try_send(AudioMessage::SetMasterVolume { volume: vol });
         }
