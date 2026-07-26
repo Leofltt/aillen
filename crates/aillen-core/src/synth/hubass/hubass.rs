@@ -1,42 +1,10 @@
 use crate::dsp::oscillator::{SubWaveform, Waveform};
 use crate::dsp::lfo::LfoWaveform;
 use crate::dsp::distortion::DistortionMode;
+use crate::dsp::delay::VariableDelay;
 use crate::synth::Voice;
 use super::{voice::HubassVoice, SynthHubassPatch};
 use std::f32::consts::PI;
-
-/// A simple ring-buffered variable delay line with linear interpolation.
-pub struct VariableDelay {
-    buffer: Vec<f32>,
-    write_pos: usize,
-    sample_rate: f32,
-}
-
-impl VariableDelay {
-    pub fn new(sample_rate: f32, max_delay_samples: usize) -> Self {
-        Self {
-            buffer: vec![0.0; max_delay_samples],
-            write_pos: 0,
-            sample_rate,
-        }
-    }
-
-    pub fn push(&mut self, sample: f32) {
-        self.buffer[self.write_pos] = sample;
-        self.write_pos = (self.write_pos + 1) % self.buffer.len();
-    }
-
-    pub fn read(&self, delay_sec: f32) -> f32 {
-        let delay_samples = (delay_sec * self.sample_rate).clamp(0.0, (self.buffer.len() - 2) as f32);
-        let read_pos = (self.write_pos as f32 - delay_samples + self.buffer.len() as f32) % self.buffer.len() as f32;
-
-        let idx0 = read_pos.floor() as usize % self.buffer.len();
-        let idx1 = (idx0 + 1) % self.buffer.len();
-        let frac = read_pos - read_pos.floor();
-
-        self.buffer[idx0] * (1.0 - frac) + self.buffer[idx1] * frac
-    }
-}
 
 /// A massive, versatile Rave & Bass Synthesizer with detuned unison, sub-bass, multi-mode filtering and chorus.
 pub struct SynthHubass {

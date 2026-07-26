@@ -170,6 +170,22 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | `/track/<id>/mute` | `i`/`b` | Mute (1 or true) or unmute (0 or false) the track. |
 | `/track/<id>/send/delay` | `f` | Send level (0.0 to 1.0) of this track's signal to the return delay track. |
 
+### Mixer Return Delay Controls
+
+These parameters control the stereo delay return track:
+
+| Address | Arguments | Description |
+| :--- | :--- | :--- |
+| `/mixer/return/delay/time` | `f` | Delay time in seconds (fractional delays are interpolated smoothly). |
+| `/mixer/return/delay/feedback` | `f` | Delay feedback volume factor (0.0 to 1.0). |
+| `/mixer/return/delay/mode` | `i` | Delay engine mode (0 = Tape Delay, 1 = Granular Delay). |
+| `/mixer/return/delay/pingpong` | `i`/`b`/`f` | Enable/disable ping-pong channel routing. |
+| `/mixer/return/delay/drive` | `f` | Tape saturation input drive factor. |
+| `/mixer/return/delay/grain_size` | `f` | Granular delay grain duration size in milliseconds. |
+| `/mixer/return/delay/density` | `i` | Granular delay active grain density count (1 to 8). |
+| `/mixer/return/delay/spray` | `f` | Granular delay randomized spray/jitter offset. |
+| `/mixer/return/delay/pitch` | `f` | Granular delay pitch scaling factor (e.g. 0.5 to 2.0). |
+
 ### Track FX Chain Controls
 
 Each track features an independent effects chain that can be modulated in real-time via OSC:
@@ -260,6 +276,36 @@ A parallel multi-peak bandpass filter modeling human vocal tract resonances. Sup
 ### 8. ZDF Ladder Filter (`aillen_core::dsp::filter::ladder::ResonantLadderFilter`)
 
 A stable, Zero-Delay Feedback (ZDF) 4-pole resonant ladder filter mimicking transistor/diode ladder designs. Features resonance gain compensation and a high-pass feedback filter to prevent low-end bass cancellation.
+
+### 9. Biquad Filter (`aillen_core::dsp::filter::biquad::BiquadFilter`)
+
+A standard 2-pole Biquad IIR Filter implemented using Normalized Transposed Direct Form II to prevent internal clipping errors. Supports:
+- **LowPass**, **HighPass**, **BandPass**, and **Notch** configurations.
+- Dynamic coefficient calculation on cutoff frequency or Q-factor modulation.
+
+### 10. DJ Performance Filter (`aillen_core::dsp::filter::dj::DjFilter`)
+
+A performance-oriented filter combining a Low-Pass and High-Pass filter on a single position coordinate parameter:
+- **Position = 0.0**: Bypassed.
+- **Position < 0.0**: Low-Pass mode (exponentially sweeps cutoff frequency from 20000 Hz down to 20 Hz).
+- **Position > 0.0**: High-Pass mode (exponentially sweeps cutoff frequency from 20 Hz up to 20000 Hz).
+
+### 11. Stereo Limiter (`aillen_core::dsp::Limiter`)
+
+A stereo look-ahead peak limiter used to maximize volume level while preventing digital output clipping:
+- **Controls**: Threshold Gain boost, brickwall output Ceiling, and Release time.
+- Implemented with an envelope follower and smoothed gain reduction.
+
+### 12. Stereo Panner (`aillen_core::dsp::panner::Panner`)
+
+A stereo positioning node for panning signals across a stereo field. Supports three pan laws:
+- **Constant Power Sine/Cosine**: Keeps acoustic output power identical across all pan positions.
+- **Constant Power Square Root**: Alternative constant power panning curve.
+- **Mid/Side Linear Panning**: Constant amplitude-based panning.
+
+### 13. Variable Delay Line (`aillen_core::dsp::delay::variable::VariableDelay`)
+
+A simple, single-channel ring-buffered delay line supporting linear fractional-delay interpolation. It is designed to be a lightweight building block for delay-based effects (such as Chorus, Flanger, and Vibrato).
 
 ---
 
