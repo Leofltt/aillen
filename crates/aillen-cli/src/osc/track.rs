@@ -130,6 +130,13 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::SetTrackCompSidechain { track_id, enabled });
             }
         }
+        "sidechain/source" => {
+            if let Some(arg) = msg.args.get(0) {
+                let src_idx = arg.clone().int().unwrap_or(-1);
+                let source_id = if src_idx >= 0 { Some(src_idx as usize) } else { None };
+                let _ = prod.try_send(AudioMessage::SetTrackSidechainSource { track_id, source_id });
+            }
+        }
         "fx/distortion/mode" => {
             if let Some(mode) = msg.args.get(0).and_then(|a| a.clone().int()) {
                 let _ = prod.try_send(AudioMessage::SetTrackDistortionMode { track_id, mode });

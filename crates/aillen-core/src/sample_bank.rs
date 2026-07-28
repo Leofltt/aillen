@@ -17,7 +17,7 @@ impl SampleBank {
         }
     }
 
-    /// Recursively scans a directory loading all supported `.wav`, `.mp3`, `.ogg`, `.aiff`, and `.flac` audio files.
+    /// Recursively scans a directory loading all supported `.wav`, `.mp3`, `.ogg`, `.aif`, `.aiff`, and `.flac` audio files.
     pub fn load_directory<P: AsRef<Path>>(&mut self, path: P) -> Result<(), anyhow::Error> {
         let base_path = path.as_ref();
         if !base_path.exists() {
@@ -51,7 +51,7 @@ impl SampleBank {
                     self.visit_dirs(&path, base_path)?;
                 } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     let ext_lower = ext.to_lowercase();
-                    if ext_lower == "wav" || ext_lower == "mp3" || ext_lower == "ogg" || ext_lower == "aiff" || ext_lower == "flac" {
+                    if ext_lower == "wav" || ext_lower == "mp3" || ext_lower == "ogg" || ext_lower == "aif" || ext_lower == "aiff" || ext_lower == "flac" {
                         if let Ok(rel_path) = path.strip_prefix(base_path) {
                             let key = rel_path.to_string_lossy().into_owned();
                             let depth = rel_path.components().count();

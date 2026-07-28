@@ -224,6 +224,13 @@ pub enum AudioMessage {
         /// Volume gain.
         volume: f32 
     },
+    /// Sets the sidechain source of a specific track.
+    SetTrackSidechainSource {
+        /// Track index.
+        track_id: usize,
+        /// Optional source track index.
+        source_id: Option<usize>,
+    },
     /// Sets the panning of a specific track.
     SetTrackPan { 
         /// Track index.
@@ -740,12 +747,17 @@ pub fn start_audio_thread(
                                       }
                                   }
                               }
-                             AudioMessage::SetTrackVolume { track_id, volume } => {
-                                 if track_id < mixer.tracks.len() {
-                                     mixer.tracks[track_id].set_volume(volume);
-                                 }
-                             }
-                             AudioMessage::SetTrackPan { track_id, pan } => {
+                              AudioMessage::SetTrackVolume { track_id, volume } => {
+                                  if track_id < mixer.tracks.len() {
+                                      mixer.tracks[track_id].set_volume(volume);
+                                  }
+                              }
+                              AudioMessage::SetTrackSidechainSource { track_id, source_id } => {
+                                  if track_id < mixer.tracks.len() {
+                                      mixer.tracks[track_id].sidechain_source = source_id;
+                                  }
+                              }
+                              AudioMessage::SetTrackPan { track_id, pan } => {
                                  if track_id < mixer.tracks.len() {
                                      mixer.tracks[track_id].set_pan(pan);
                                  }

@@ -28,7 +28,7 @@ pub struct SampleBuffer {
 
 /// Loads and decodes an audio file from a path into a `SampleBuffer`.
 ///
-/// Supports major formats such as WAV, MP3, and FLAC using Symphonia decoders.
+/// Supports major formats such as WAV, MP3, FLAC, and AIFF/AIF using Symphonia decoders.
 pub fn load_audio_file<P: AsRef<Path>>(path: P) -> Result<SampleBuffer, anyhow::Error> {
     let file = File::open(path.as_ref())?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
