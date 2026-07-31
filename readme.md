@@ -122,6 +122,16 @@ cargo run -p aillen-cli --release -- --samples-dir "/path/to/my/breaks"
 cargo run -p aillen-cli --release -- --port 9000 --voices 4
 ```
 
+### Command-Line Arguments
+
+The standalone executable accepts the following arguments:
+
+- `-p`, `--port <PORT>`: UDP port to listen for incoming OSC packets (default: `8000`).
+- `-v`, `--voices <VOICES>`: Number of polyphonic synth voices to allocate (default: `8`).
+- `-d`, `--device-index <DEVICE_INDEX>`: Optional index of the host audio output device to use.
+- `-l`, `--list-devices`: Flags to list all available host output devices and exit.
+- `-s`, `--samples-dir <SAMPLES_DIR>`: Path to a directory containing audio samples to load on startup.
+
 ### Audio Device Management
 
 If you have multiple audio interfaces, use these flags to select the correct one:
@@ -134,7 +144,19 @@ cargo run -p aillen-cli -- --list-devices
 cargo run -p aillen-cli -- --device-index 2
 ```
 
+### Terminal User Interface (TUI)
+
+The CLI launches an interactive ASCII Terminal User Interface (TUI) designed for standard terminals (configured for exactly `80 columns x 43 rows`).
+
+- **Layout Grid**:
+  - **Top (Rows 0-30)**: Displays active track waveforms (up to 4 track slots in a 2x2 grid) with vertical left/right channel oscilloscope scopes and real-time track OSC command logs.
+  - **Bottom-Left (Rows 31-42)**: Displays the master output volume horizontal oscilloscope scope and master-level OSC logs.
+  - **Bottom-Right (Rows 31-42)**: Plots a real-time **L x R XY Vectorscope** displaying phase correlation, stereo field width, and alignment.
+- **LRU Dynamic Display**: Out of the 8 available tracks, only the 4 most recently active tracks (based on audio activity or incoming OSC messages) are displayed. When a track goes inactive for 15 seconds, it is swapped out for a more recently active track.
+- **Sticky Slots**: Tracks remember their last preferred slot index (`preferred_slot`) to prevent disorienting jumps when tracks are dynamic swapped.
+
 ---
+
 
 ## 2. Audio Mixer & Instrument Tracks
 
@@ -379,11 +401,11 @@ A simple, single-channel ring-buffered delay line supporting linear fractional-d
 | `/track/<id>/filter/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.05, 0.3, 0.2, 0.5]` | Filter Cutoff modulation envelope parameters `[A, D, S, R]`. A/D/R (seconds): `0.001` to `10.0`. S (level): `0.0` to `1.0`. |
 | `/track/<id>/filter/params` | `ffi` | `[f32, f32, i32]` | `[1000.0, 0.707, 0]` | Filter parameters `[cutoff, Q, type]`. Cutoff: `20.0` to `20000.0` Hz. Q (resonance): `0.1` to `10.0+`. Type: `0` = LP, `1` = HP, `2` = BP, `3` = Notch. |
 | `/track/<id>/filter/mod` | `bf` | `[bool, f32]` | `[true, 5000.0]` | Cutoff modulation parameters `[enabled, amount]`. Amount (envelope depth): `-20000.0` to `20000.0` Hz. |
-| `/track/<id>/feedback` | `f` | `f32` | `0.0` | Modulator phase self-feedback intensity. Range: `0.0` to `1.0` (morphs sine to saw/noise). |
-| `/track/<id>/wavefold` | `ff` | `[f32, f32]` | `[1.0, 0.0]` | Modulator wavefolder configuration `[gain, mix]`. Gain: `1.0` to `10.0`. Mix (dry/wet): `0.0` to `1.0`. |
-| `/track/<id>/noise` | `ff` | `[f32, f32]` | `[0.0, 0.0]` | Phase noise injection levels `[carrier_noise, modulator_noise]`. Range: `0.0` to `1.0`. |
-| `/track/<id>/pitch/sweep` | `ff` | `[f32, f32]` | `[0.0, 0.1]` | Pitch sweep range and decay `[depth_semitones, decay_sec]`. Depth: `-48.0` to `48.0` semitones. Decay: `0.001` to `5.0` seconds. |
-| `/track/<id>/lfo` | `ifff` | `[i32, f32, f32, f32]` | `[0, 2.0, 0.0, 0.0]` | Voice LFO config `[waveform, speed_hz, mod_index_depth, cutoff_depth]`. Waveform: `0` = Sine, `1` = Tri, `2` = Saw, `3` = Square, `4` = S&H. Speed: `0.001` to `100.0` Hz. Mod Index Depth: `0.0` to `10.0`. Cutoff Depth: `0.0` to `10000.0` Hz. |
+| `/track/<id>/feedback`<br>_or_ `/track/<id>/twoop/feedback` | `f` | `f32` | `0.0` | Modulator phase self-feedback intensity. Range: `0.0` to `1.0` (morphs sine to saw/noise). |
+| `/track/<id>/wavefold`<br>_or_ `/track/<id>/twoop/wavefold` | `ff` | `[f32, f32]` | `[1.0, 0.0]` | Modulator wavefolder configuration `[gain, mix]`. Gain: `1.0` to `10.0`. Mix (dry/wet): `0.0` to `1.0`. |
+| `/track/<id>/noise`<br>_or_ `/track/<id>/twoop/noise` | `ff` | `[f32, f32]` | `[0.0, 0.0]` | Phase noise injection levels `[carrier_noise, modulator_noise]`. Range: `0.0` to `1.0`. |
+| `/track/<id>/pitch/sweep`<br>_or_ `/track/<id>/twoop/pitch/sweep` | `ff` | `[f32, f32]` | `[0.0, 0.1]` | Pitch sweep range and decay `[depth_semitones, decay_sec]`. Depth: `-48.0` to `48.0` semitones. Decay: `0.001` to `5.0` seconds. |
+| `/track/<id>/lfo`<br>_or_ `/track/<id>/twoop/lfo` | `ifff` | `[i32, f32, f32, f32]` | `[0, 2.0, 0.0, 0.0]` | Voice LFO config `[waveform, speed_hz, mod_index_depth, cutoff_depth]`. Waveform: `0` = Sine, `1` = Tri, `2` = Saw, `3` = Square, `4` = S&H. Speed: `0.001` to `100.0` Hz. Mod Index Depth: `0.0` to `10.0`. Cutoff Depth: `0.0` to `10000.0` Hz. |
 
 ### Track 1, 2, 3 & 5: Sampler
 
