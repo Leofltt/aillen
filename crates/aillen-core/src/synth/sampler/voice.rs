@@ -234,6 +234,30 @@ impl SamplerVoice {
                     out_r = (s0_r + (s1_r - s0_r) * frac) * self.velocity;
                 }
 
+                if self.slice_mode {
+                    let sub_slice_start = self.slice_start + self.stutter_index as f64 * self.sub_slice_len;
+                    let sub_slice_end = sub_slice_start + self.sub_slice_len;
+                    let relative_phase = index - sub_slice_start;
+                    let dist_from_end = sub_slice_end - index;
+
+                    // 5 ms smoothstep fade window, capped at half the sub-slice length
+                    let fade_time_ms = 5.0;
+                    let fade_samples = ((fade_time_ms / 1000.0) * original_sample_rate as f64).min(self.sub_slice_len * 0.5);
+
+                    if fade_samples > 0.0 {
+                        let mut gain = 1.0;
+                        if relative_phase < fade_samples {
+                            let t = (relative_phase / fade_samples) as f32;
+                            gain = t * t * (3.0 - 2.0 * t);
+                        } else if dist_from_end < fade_samples {
+                            let t = (dist_from_end / fade_samples).max(0.0) as f32;
+                            gain = t * t * (3.0 - 2.0 * t);
+                        }
+                        out_l *= gain;
+                        out_r *= gain;
+                    }
+                }
+
                 self.phase += phase_increment;
 
                 if self.slice_mode {

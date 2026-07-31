@@ -42,6 +42,8 @@ pub struct Sampler {
     pub selected_slice: usize,
     /// Stutter count repeats.
     pub stutter_count: usize,
+    /// File path of the currently loaded sample.
+    pub current_path: Option<String>,
 }
 
 impl Sampler {
@@ -67,6 +69,7 @@ impl Sampler {
             num_slices: 16,
             selected_slice: 0,
             stutter_count: 1,
+            current_path: None,
         }
     }
 
@@ -323,7 +326,7 @@ mod tests {
         voice.stutter_count = 2;
 
         let buffer = SampleBuffer {
-            data: vec![0.5; 1000],
+            data: vec![0.5; 10000],
             channels: 1,
             sample_rate: 44100.0,
         };
@@ -333,7 +336,15 @@ mod tests {
         assert!(voice.active);
         
         let (l, r) = voice.process();
-        assert_eq!(l, 0.5);
+        assert_eq!(l, 0.0); // Faded in to 0.0 at the boundary start
+        assert_eq!(r, 0.0);
+
+        // Advance past the 5ms fade-in window (220.5 samples at 44.1kHz)
+        for _ in 0..250 {
+            voice.process();
+        }
+        let (l, r) = voice.process();
+        assert_eq!(l, 0.5); // Fully faded in
         assert_eq!(r, 0.5);
     }
 }

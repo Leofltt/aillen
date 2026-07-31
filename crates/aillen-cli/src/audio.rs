@@ -686,6 +686,7 @@ pub fn start_audio_thread(
                               }
                               AudioMessage::SynthHubassSetOutputGain { gain } => {
                                   for track in &mut mixer.tracks {
+                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
                                           synth.set_output_gain(gain);
                                       }
                                   }
@@ -693,14 +694,19 @@ pub fn start_audio_thread(
                               AudioMessage::SamplerLoadSample { track_id, path } => {
                                   if track_id < mixer.tracks.len() {
                                       if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
-                                          println!("Loading sample on track {} from path: {}", track_id, path);
-                                          match load_audio_file(&path) {
-                                              Ok(buf) => {
-                                                  sampler.set_sample(buf);
-                                                  println!("Sample loaded successfully!");
-                                              }
-                                              Err(e) => {
-                                                  eprintln!("Failed to load sample file: {:?}", e);
+                                          if sampler.current_path.as_deref() == Some(&path) {
+                                              // Already loaded, do nothing
+                                          } else {
+                                              println!("Loading sample on track {} from path: {}", track_id, path);
+                                              match load_audio_file(&path) {
+                                                  Ok(buf) => {
+                                                      sampler.set_sample(buf);
+                                                      sampler.current_path = Some(path);
+                                                      println!("Sample loaded successfully!");
+                                                  }
+                                                  Err(e) => {
+                                                      eprintln!("Failed to load sample file: {:?}", e);
+                                                  }
                                               }
                                           }
                                       }
@@ -755,6 +761,7 @@ pub fn start_audio_thread(
                                           for voice in &mut sampler.voices {
                                               voice.sample_buffer = Some(buffer.clone());
                                           }
+                                          sampler.current_path = None;
                                           println!("Sampler on track {}: Switched to preloaded buffer from SampleBank!", track_id);
                                       }
                                   }

@@ -6,6 +6,15 @@ use aillen_core::dsp::{oscillator::Waveform, filter::FilterType};
 use aillen_core::synth::two_op::SynthMode;
 use aillen_core::synth::sampler::{PlayMode, StretchMode};
 
+fn osc_to_usize(arg: &rosc::OscType) -> Option<usize> {
+    match arg {
+        rosc::OscType::Int(i) => Some(*i as usize),
+        rosc::OscType::Float(f) => Some(*f as usize),
+        rosc::OscType::Double(d) => Some(*d as usize),
+        _ => None,
+    }
+}
+
 pub fn parse_track_command(
     track_id: usize,
     sub_addr: &str,
@@ -352,7 +361,7 @@ pub fn parse_track_command(
         }
         "sample/overlap" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
-                let overlap = arg.clone().int().unwrap_or(4) as usize;
+                let overlap = osc_to_usize(arg).unwrap_or(4);
                 let _ = prod.try_send(AudioMessage::SamplerSetOverlap { track_id, overlap });
             }
         }
@@ -374,19 +383,19 @@ pub fn parse_track_command(
         }
         "sample/slice/count" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
-                let n = arg.clone().int().unwrap_or(16) as usize;
+                let n = osc_to_usize(arg).unwrap_or(16);
                 let _ = prod.try_send(AudioMessage::SamplerSetNumSlices { track_id, n });
             }
         }
         "sample/slice/select" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
-                let slice = arg.clone().int().unwrap_or(0) as usize;
+                let slice = osc_to_usize(arg).unwrap_or(0);
                 let _ = prod.try_send(AudioMessage::SamplerSetSelectedSlice { track_id, slice });
             }
         }
         "sample/slice/stutter" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
-                let count = arg.clone().int().unwrap_or(1) as usize;
+                let count = osc_to_usize(arg).unwrap_or(1);
                 let _ = prod.try_send(AudioMessage::SamplerSetStutterCount { track_id, count });
             }
         }
