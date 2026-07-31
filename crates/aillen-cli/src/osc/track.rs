@@ -286,8 +286,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetLfo { track_id, waveform, speed, mod_index, cutoff });
             }
         }
-        // Sampler specific (Track 1)
-        "sample/load" if track_id == 1 => {
+        // Sampler specific (Tracks 1, 2, 3, 5)
+        "sample/load" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(path) = msg.args.get(0).and_then(|a| a.clone().string()) {
                 let mut found_in_bank = None;
                 for (key, buffer) in &bank.samples {
@@ -298,22 +298,22 @@ pub fn parse_track_command(
                 }
                 if let Some(buffer) = found_in_bank {
                     println!("SampleBank: Match found for \"{}\", loading from cache!", path);
-                    let _ = prod.try_send(AudioMessage::SamplerLoadBuffer { buffer });
+                    let _ = prod.try_send(AudioMessage::SamplerLoadBuffer { track_id, buffer });
                 } else {
-                    let _ = prod.try_send(AudioMessage::SamplerLoadSample { path });
+                    let _ = prod.try_send(AudioMessage::SamplerLoadSample { track_id, path });
                 }
             }
         }
-        "sample/select" if track_id == 1 => {
+        "sample/select" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(name) = msg.args.get(0).and_then(|a| a.clone().string()) {
                 if let Some(buffer) = bank.get(&name) {
-                    let _ = prod.try_send(AudioMessage::SamplerLoadBuffer { buffer });
+                    let _ = prod.try_send(AudioMessage::SamplerLoadBuffer { track_id, buffer });
                 } else {
                     eprintln!("SampleBank: Sample not found: \"{}\"", name);
                 }
             }
         }
-        "sample/mode" if track_id == 1 => {
+        "sample/mode" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
                 let mode_idx = arg.clone().int().unwrap_or(0);
                 let mode = match mode_idx {
@@ -321,20 +321,20 @@ pub fn parse_track_command(
                     1 => PlayMode::Loop,
                     _ => PlayMode::OneShot,
                 };
-                let _ = prod.try_send(AudioMessage::SamplerSetPlayMode { mode });
+                let _ = prod.try_send(AudioMessage::SamplerSetPlayMode { track_id, mode });
             }
         }
-        "sample/pitch" if track_id == 1 => {
+        "sample/pitch" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(ratio) = msg.args.get(0).and_then(|a| a.clone().float()) {
-                let _ = prod.try_send(AudioMessage::SamplerSetPitchRatio { ratio });
+                let _ = prod.try_send(AudioMessage::SamplerSetPitchRatio { track_id, ratio });
             }
         }
-        "sample/speed" if track_id == 1 => {
+        "sample/speed" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(ratio) = msg.args.get(0).and_then(|a| a.clone().float()) {
-                let _ = prod.try_send(AudioMessage::SamplerSetSpeedRatio { ratio });
+                let _ = prod.try_send(AudioMessage::SamplerSetSpeedRatio { track_id, ratio });
             }
         }
-        "sample/mode/stretch" if track_id == 1 => {
+        "sample/mode/stretch" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
                 let mode_idx = arg.clone().int().unwrap_or(0);
                 let mode = match mode_idx {
@@ -342,26 +342,26 @@ pub fn parse_track_command(
                     1 => StretchMode::Granular,
                     _ => StretchMode::Resample,
                 };
-                let _ = prod.try_send(AudioMessage::SamplerSetStretchMode { mode });
+                let _ = prod.try_send(AudioMessage::SamplerSetStretchMode { track_id, mode });
             }
         }
-        "sample/grain_size" if track_id == 1 => {
+        "sample/grain_size" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(size_ms) = msg.args.get(0).and_then(|a| a.clone().float()) {
-                let _ = prod.try_send(AudioMessage::SamplerSetGrainSize { size_ms });
+                let _ = prod.try_send(AudioMessage::SamplerSetGrainSize { track_id, size_ms });
             }
         }
-        "sample/overlap" if track_id == 1 => {
+        "sample/overlap" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
                 let overlap = arg.clone().int().unwrap_or(4) as usize;
-                let _ = prod.try_send(AudioMessage::SamplerSetOverlap { overlap });
+                let _ = prod.try_send(AudioMessage::SamplerSetOverlap { track_id, overlap });
             }
         }
-        "filter" if track_id == 1 => {
+        "filter" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(pos) = msg.args.get(0).and_then(|a| a.clone().float()) {
-                let _ = prod.try_send(AudioMessage::SamplerSetDjFilter { position: pos });
+                let _ = prod.try_send(AudioMessage::SamplerSetDjFilter { track_id, position: pos });
             }
         }
-        "sample/slice/mode" if track_id == 1 => {
+        "sample/slice/mode" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
                 let enabled = match arg {
                     rosc::OscType::Bool(b) => *b,
@@ -369,25 +369,25 @@ pub fn parse_track_command(
                     rosc::OscType::Float(f) => *f > 0.5,
                     _ => false,
                 };
-                let _ = prod.try_send(AudioMessage::SamplerSetSliceMode { enabled });
+                let _ = prod.try_send(AudioMessage::SamplerSetSliceMode { track_id, enabled });
             }
         }
-        "sample/slice/count" if track_id == 1 => {
+        "sample/slice/count" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
                 let n = arg.clone().int().unwrap_or(16) as usize;
-                let _ = prod.try_send(AudioMessage::SamplerSetNumSlices { n });
+                let _ = prod.try_send(AudioMessage::SamplerSetNumSlices { track_id, n });
             }
         }
-        "sample/slice/select" if track_id == 1 => {
+        "sample/slice/select" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
                 let slice = arg.clone().int().unwrap_or(0) as usize;
-                let _ = prod.try_send(AudioMessage::SamplerSetSelectedSlice { slice });
+                let _ = prod.try_send(AudioMessage::SamplerSetSelectedSlice { track_id, slice });
             }
         }
-        "sample/slice/stutter" if track_id == 1 => {
+        "sample/slice/stutter" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
                 let count = arg.clone().int().unwrap_or(1) as usize;
-                let _ = prod.try_send(AudioMessage::SamplerSetStutterCount { count });
+                let _ = prod.try_send(AudioMessage::SamplerSetStutterCount { track_id, count });
             }
         }
         // Synth303 specific (Track 6)

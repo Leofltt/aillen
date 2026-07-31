@@ -175,43 +175,51 @@ pub enum AudioMessage {
     },
 
     // Sampler specific
-    /// Loads an audio file into the Sampler (Track 1) buffer.
+    /// Loads an audio file into the Sampler buffer.
     SamplerLoadSample { 
+        track_id: usize,
         /// Path to the audio file on disk.
         path: String 
     },
     /// Sets the Sampler playback mode.
     SamplerSetPlayMode { 
+        track_id: usize,
         /// Playback mode (OneShot or Loop).
         mode: PlayMode 
     },
     /// Sets the Sampler pitch ratio factor.
     SamplerSetPitchRatio { 
+        track_id: usize,
         /// Pitch scaling multiplier.
         ratio: f32 
     },
     /// Sets the Sampler playback speed ratio factor.
     SamplerSetSpeedRatio { 
+        track_id: usize,
         /// Speed scaling multiplier.
         ratio: f32 
     },
     /// Sets the Sampler time-stretching engine mode.
     SamplerSetStretchMode { 
+        track_id: usize,
         /// Decoupled granular or linked resampler mode.
         mode: StretchMode 
     },
     /// Sets Sampler grain duration size in milliseconds.
     SamplerSetGrainSize { 
+        track_id: usize,
         /// Grain duration.
         size_ms: f32 
     },
     /// Sets Sampler overlapping grains count.
     SamplerSetOverlap { 
+        track_id: usize,
         /// Overlapping grains.
         overlap: usize 
     },
-    /// Loads a preloaded sample buffer directly into the Sampler (Track 1) buffer.
+    /// Loads a preloaded sample buffer directly into the Sampler buffer.
     SamplerLoadBuffer {
+        track_id: usize,
         /// Shared sample buffer wrapper.
         buffer: Arc<aillen_core::synth::sampler::SampleBuffer>,
     },
@@ -252,26 +260,31 @@ pub enum AudioMessage {
     },
     /// Sets the Sampler DJ performance filter position.
     SamplerSetDjFilter {
+        track_id: usize,
         /// Position from -1.0 to 1.0.
         position: f32
     },
     /// Enables/disables slice playback mode.
     SamplerSetSliceMode {
+        track_id: usize,
         /// Toggle state.
         enabled: bool
     },
     /// Sets the total number of slices.
     SamplerSetNumSlices {
+        track_id: usize,
         /// Number of slices.
         n: usize
     },
     /// Selects the active slice index.
     SamplerSetSelectedSlice {
+        track_id: usize,
         /// Slice index.
         slice: usize
     },
     /// Sets the stutter repetitions count.
     SamplerSetStutterCount {
+        track_id: usize,
         /// Repeat count.
         count: usize
     },
@@ -673,15 +686,14 @@ pub fn start_audio_thread(
                               }
                               AudioMessage::SynthHubassSetOutputGain { gain } => {
                                   for track in &mut mixer.tracks {
-                                      if let Some(synth) = track.instrument.as_any_mut().downcast_mut::<SynthHubass>() {
                                           synth.set_output_gain(gain);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerLoadSample { path } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
-                                          println!("Loading sample from path: {}", path);
+                              AudioMessage::SamplerLoadSample { track_id, path } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                          println!("Loading sample on track {} from path: {}", track_id, path);
                                           match load_audio_file(&path) {
                                               Ok(buf) => {
                                                   sampler.set_sample(buf);
@@ -694,56 +706,56 @@ pub fn start_audio_thread(
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetPlayMode { mode } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetPlayMode { track_id, mode } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_play_mode(mode);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetPitchRatio { ratio } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetPitchRatio { track_id, ratio } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_pitch_ratio(ratio);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetSpeedRatio { ratio } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetSpeedRatio { track_id, ratio } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_speed_ratio(ratio);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetStretchMode { mode } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetStretchMode { track_id, mode } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_stretch_mode(mode);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetGrainSize { size_ms } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetGrainSize { track_id, size_ms } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_grain_size(size_ms);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetOverlap { overlap } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetOverlap { track_id, overlap } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_overlap(overlap);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerLoadBuffer { buffer } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerLoadBuffer { track_id, buffer } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.sample_buffer = Some(buffer.clone());
                                           for voice in &mut sampler.voices {
                                               voice.sample_buffer = Some(buffer.clone());
                                           }
-                                          println!("Sampler: Switched to preloaded buffer from SampleBank!");
+                                          println!("Sampler on track {}: Switched to preloaded buffer from SampleBank!", track_id);
                                       }
                                   }
                               }
@@ -770,37 +782,37 @@ pub fn start_audio_thread(
                              AudioMessage::SetMasterVolume { volume } => {
                                  mixer.set_master_volume(volume);
                              }
-                              AudioMessage::SamplerSetDjFilter { position } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetDjFilter { track_id, position } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_dj_filter_position(position);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetSliceMode { enabled } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetSliceMode { track_id, enabled } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_slice_mode(enabled);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetNumSlices { n } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetNumSlices { track_id, n } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_num_slices(n);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetSelectedSlice { slice } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetSelectedSlice { track_id, slice } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_selected_slice(slice);
                                       }
                                   }
                               }
-                              AudioMessage::SamplerSetStutterCount { count } => {
-                                  for track in &mut mixer.tracks {
-                                      if let Some(sampler) = track.instrument.as_any_mut().downcast_mut::<Sampler>() {
+                              AudioMessage::SamplerSetStutterCount { track_id, count } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
                                           sampler.set_stutter_count(count);
                                       }
                                   }
