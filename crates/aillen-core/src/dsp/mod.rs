@@ -10,14 +10,21 @@ pub mod waveloss;
 pub mod lfo;
 pub mod distortion;
 pub mod limiter;
+pub mod wavefolder;
+pub mod bitcrusher;
 
-pub use compressor::Compressor;
+pub use wavefolder::Wavefolder;
+pub use bitcrusher::Bitcrusher;
 pub use am_ring_mod::{AmRingMod, ModulationSource};
+pub use compressor::Compressor;
 pub use delay::{StereoDelay, DelayMode};
 pub use fx_chain::FxChain;
 pub use waveloss::WaveLoss;
 pub use distortion::{Distortion, DistortionMode};
 pub use limiter::Limiter;
+pub use lfo::Lfo;
+
+pub use panner::{PanMode, Panner};
 
 /// A trait for generating or processing a single frame of audio data.
 pub trait AudioNode {

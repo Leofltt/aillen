@@ -6,7 +6,11 @@ pub mod dj;
 pub mod ladder;
 /// Formant filter implementation.
 pub mod formant;
+/// Comb filter implementation.
+pub mod comb;
 
 pub use biquad::{BiquadFilter, FilterType};
 pub use dj::DjFilter;
 pub use ladder::ResonantLadderFilter;
+pub use formant::FormantFilter;
+pub use comb::CombFilter;

@@ -6,7 +6,7 @@ Opinionated, feature-incomplete audio engine, DSP library, and live synthesizers
 
 This project is set up as a Cargo Workspace containing:
 
-- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including standard Biquad and DJ performance filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), a stereo delay (Tape and Granular modes), a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, and a sample bank).
+- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including Biquad, DJ performance, Formant, and Comb filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), wavefolding saturators, bitcrushing degraders, a stereo delay (Tape and Granular modes), a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, a 303 bass synth, a rave hubass synth, and a sample bank).
 - `aillen-cli`: A standalone performance synthesizer that wraps `aillen-core` with real-time stereo audio (`cpal`) and an asynchronous UDP OSC server mapped via lock-free channels (`crossbeam-channel`).
 
 ---
@@ -80,7 +80,22 @@ Each track owns an independent `FxChain` containing a sequential arrangement of 
                                       |           |
                                       v           v
                                  +---------+ +---------+
+                                 |WaveFoldr| |WaveFoldr|
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
+                                 +---------+ +---------+
                                  |Distortn | |Distortn |
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
+                                 +---------+ +---------+
+                                 |Bitcrshr | |Bitcrshr |
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
+                                 +---------+ +---------+
+                                 |CombFiltr| |CombFiltr|
                                  +---------+ +---------+
                                       |           |
                                       v           v
