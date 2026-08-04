@@ -25,43 +25,37 @@ The following ASCII diagram illustrates the audio signal path from the instrumen
                             |                            +---------+|
                             |                            | FxChain ||
                             |                            +---------+|
-                            |                            /    |     |
-                            |               (Send level)      v     |
-                            |                    |       +---------+|
-                            |                    |       | Panner  ||
-                            |                    |       +---------+|
-                            |                    |            |     |
-                            +--------------------|------------|-----+
-                                                 |            |
-                                                 v            v
-                                            [Sum Sends]  [Sum Dry]
-                                                 |            |
-                                                 v            |
-                                         +---------------+    |
-                                         | Return Delay  |    |
-                                         | (100% Wet)    |    |
-                                         +---------------+    |
-                                                 |            |
-                                                 v            v
-                                                 +----> [Mixer Summing]
-                                                             |
-                                                             v
-                                                    +-----------------+
-                                                    |  Master Volume  |
-                                                    +-----------------+
-                                                             |
-                                                             v
-                                                    +-----------------+
-                                                    | Master DJFilter |
-                                                    +-----------------+
-                                                             |
-                                                             v
-                                                    +-----------------+
-                                                    | Master WaveLoss |
-                                                    +-----------------+
-                                                             |
-                                                             v
-                                                    Stereo Output (DAC)
+                            |                           /     |     |
+                            |            (Sends: Dly/Rev)     v     |
+                            |                |     |     +---------+|
+                            |                |     |     | Panner  ||
+                            |                |     |     +---------+|
+                            |                |     |          |     |
+                            +----------------|-----|----------|-----+
+                                             |     |          |
+                                             v     v          v
+                                         [Sends] [Sends]  [Sum Dry]
+                                            |      |          |
+                                            v      v          |
+                                    +---------+ +---------+   |
+                                    | Return  | | Return  |   |
+                                    | Delay   | | Reverb  |   |
+                                    +---------+ +---------+   |
+                                         |           |        |
+                                         v           v        v
+                                         +-----------+---> [Mixer Summing]
+                                                              |
+                                                              v
+                                                     +-----------------+
+                                                     |  Master Volume  |
+                                                     +-----------------+
+                                                     | Master DJFilter |
+                                                     +-----------------+
+                                                     | Master WaveLoss |
+                                                     +-----------------+
+                                                              |
+                                                              v
+                                                     Stereo Output (DAC)
 ```
 
 ### Track FxChain Detail

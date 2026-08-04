@@ -12,9 +12,12 @@ pub mod distortion;
 pub mod limiter;
 pub mod wavefolder;
 pub mod bitcrusher;
+pub mod reverb;
 
 pub use wavefolder::Wavefolder;
 pub use bitcrusher::Bitcrusher;
+pub use reverb::StereoReverb;
+
 pub use am_ring_mod::{AmRingMod, ModulationSource};
 pub use compressor::Compressor;
 pub use delay::{StereoDelay, DelayMode};
