@@ -350,6 +350,17 @@ pub enum AudioMessage {
     SetMasterWlDrop { drop: usize },
     SetMasterWlOutof { outof: usize },
     SetMasterWlMode { mode: usize },
+    SetTrackSendReverb { track_id: usize, send: f32 },
+    SetReturnReverbSizeTime { size_time: f32 },
+    SetReturnReverbTone { tone: f32 },
+    SetTrackWfDrive { track_id: usize, drive: f32 },
+    SetTrackWfFolds { track_id: usize, folds: f32 },
+    SetTrackWfSymmetry { track_id: usize, symmetry: f32 },
+    SetTrackBitcrusherBits { track_id: usize, bits: f32 },
+    SetTrackBitcrusherDownsample { track_id: usize, downsample: usize },
+    SetTrackCombFreq { track_id: usize, freq: f32 },
+    SetTrackCombFeedback { track_id: usize, feedback: f32 },
+    SetTrackCombDamp { track_id: usize, damp: f32 },
     GlobalPanic,
 }
 
@@ -954,6 +965,65 @@ pub fn start_audio_thread(
                                     mixer.tracks[track_id].fx_chain.distortion_r.mix = mix;
                                 }
                             }
+                             AudioMessage::SetTrackSendReverb { track_id, send } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].send_reverb = send;
+                                 }
+                             }
+                             AudioMessage::SetReturnReverbSizeTime { size_time } => {
+                                 mixer.return_reverb.size_time = size_time;
+                             }
+                             AudioMessage::SetReturnReverbTone { tone } => {
+                                 mixer.return_reverb.tone = tone;
+                             }
+                             AudioMessage::SetTrackWfDrive { track_id, drive } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.wavefolder_l.drive = drive;
+                                     mixer.tracks[track_id].fx_chain.wavefolder_r.drive = drive;
+                                 }
+                             }
+                             AudioMessage::SetTrackWfFolds { track_id, folds } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.wavefolder_l.folds = folds;
+                                     mixer.tracks[track_id].fx_chain.wavefolder_r.folds = folds;
+                                 }
+                             }
+                             AudioMessage::SetTrackWfSymmetry { track_id, symmetry } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.wavefolder_l.symmetry = symmetry;
+                                     mixer.tracks[track_id].fx_chain.wavefolder_r.symmetry = symmetry;
+                                 }
+                             }
+                             AudioMessage::SetTrackBitcrusherBits { track_id, bits } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.bitcrusher_l.bits = bits;
+                                     mixer.tracks[track_id].fx_chain.bitcrusher_r.bits = bits;
+                                 }
+                             }
+                             AudioMessage::SetTrackBitcrusherDownsample { track_id, downsample } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.bitcrusher_l.downsample = downsample;
+                                     mixer.tracks[track_id].fx_chain.bitcrusher_r.downsample = downsample;
+                                 }
+                             }
+                             AudioMessage::SetTrackCombFreq { track_id, freq } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.comb_filter_l.frequency = freq;
+                                     mixer.tracks[track_id].fx_chain.comb_filter_r.frequency = freq;
+                                 }
+                             }
+                             AudioMessage::SetTrackCombFeedback { track_id, feedback } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.comb_filter_l.feedback = feedback;
+                                     mixer.tracks[track_id].fx_chain.comb_filter_r.feedback = feedback;
+                                 }
+                             }
+                             AudioMessage::SetTrackCombDamp { track_id, damp } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.comb_filter_l.dampening_filter.set_cutoff(damp);
+                                     mixer.tracks[track_id].fx_chain.comb_filter_r.dampening_filter.set_cutoff(damp);
+                                 }
+                             }
                             AudioMessage::SetMasterLimiterGain { gain } => {
                                 mixer.master_limiter.threshold_gain = gain;
                             }

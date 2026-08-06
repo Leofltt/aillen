@@ -84,5 +84,13 @@ pub fn parse_mixer_command(addr: &str, msg: &OscMessage, prod: &Sender<AudioMess
         if let Some(pitch) = msg.args.get(0).and_then(|a| a.clone().float()) {
             let _ = prod.try_send(AudioMessage::SetReturnDelayPitch { pitch });
         }
+    } else if addr == "/mixer/return/reverb/decay" || addr == "/mixer/return/reverb/time" || addr == "/mixer/return/reverb/size" {
+        if let Some(size_time) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            let _ = prod.try_send(AudioMessage::SetReturnReverbSizeTime { size_time });
+        }
+    } else if addr == "/mixer/return/reverb/tone" {
+        if let Some(tone) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            let _ = prod.try_send(AudioMessage::SetReturnReverbTone { tone });
+        }
     }
 }

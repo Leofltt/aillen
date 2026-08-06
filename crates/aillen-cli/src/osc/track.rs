@@ -70,6 +70,11 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::SetTrackSendDelay { track_id, send });
             }
         }
+        "send/reverb" => {
+            if let Some(send) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackSendReverb { track_id, send });
+            }
+        }
         // FX Chain commands
         "fx/filter/position" => {
             if let Some(pos) = msg.args.get(0).and_then(|a| a.clone().float()) {
@@ -159,6 +164,46 @@ pub fn parse_track_command(
         "fx/distortion/mix" => {
             if let Some(mix) = msg.args.get(0).and_then(|a| a.clone().float()) {
                 let _ = prod.try_send(AudioMessage::SetTrackDistortionMix { track_id, mix });
+            }
+        }
+        "fx/wavefolder/drive" => {
+            if let Some(drive) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackWfDrive { track_id, drive });
+            }
+        }
+        "fx/wavefolder/folds" => {
+            if let Some(folds) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackWfFolds { track_id, folds });
+            }
+        }
+        "fx/wavefolder/symmetry" => {
+            if let Some(symmetry) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackWfSymmetry { track_id, symmetry });
+            }
+        }
+        "fx/bitcrusher/bits" => {
+            if let Some(bits) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackBitcrusherBits { track_id, bits });
+            }
+        }
+        "fx/bitcrusher/downsample" => {
+            if let Some(downsample) = msg.args.get(0).and_then(|a| a.clone().int()) {
+                let _ = prod.try_send(AudioMessage::SetTrackBitcrusherDownsample { track_id, downsample: downsample.max(1) as usize });
+            }
+        }
+        "fx/comb/freq" => {
+            if let Some(freq) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackCombFreq { track_id, freq });
+            }
+        }
+        "fx/comb/feedback" => {
+            if let Some(feedback) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackCombFeedback { track_id, feedback });
+            }
+        }
+        "fx/comb/damp" => {
+            if let Some(damp) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::SetTrackCombDamp { track_id, damp });
             }
         }
         // Two-Op specific (Track 0 and Track 4)
