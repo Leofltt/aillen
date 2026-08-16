@@ -6,7 +6,7 @@ Opinionated, feature-incomplete audio engine, DSP library, and live synthesizers
 
 This project is set up as a Cargo Workspace containing:
 
-- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including Biquad, DJ performance, Formant, and Comb filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), wavefolding saturators, bitcrushing degraders, a stereo delay (Tape and Granular modes), a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, a 303 bass synth, a rave hubass synth, and a sample bank).
+- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including Biquad, DJ performance, Formant, and Comb filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), wavefolding saturators, bitcrushing degraders, a stereo delay (Tape and Granular modes), an Elektron-style stereo reverb, a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, a 303 bass synth, a rave hubass synth, and a sample bank).
 - `aillen-cli`: A standalone performance synthesizer that wraps `aillen-core` with real-time stereo audio (`cpal`) and an asynchronous UDP OSC server mapped via lock-free channels (`crossbeam-channel`).
 
 ---
@@ -179,7 +179,8 @@ The engine supports a stereo Mixer with 8 instrument tracks and one delay return
 - **Track 5**: `Sampler`
 - **Track 6**: `Synth303` (Roland 303-like monophonic/legato bass synth)
 - **Track 7**: `SynthHubass` (Versatile Rave & Bass Synthesizer with detuned unison, filter-bypassed sub-bass, multi-mode filters, drive, LFO, and stereo chorus)
-- **Return Track**: A stereo delay effect track (100% wet by default).
+- **Return Track (Delay)**: A stereo delay return track (100% wet by default).
+- **Return Track (Reverb)**: A stereo reverb return track (100% wet by default).
 
 All OSC messages must target the appropriate track path (`/track/<id>/`) or mixer path (`/mixer/`).
 
@@ -200,6 +201,7 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | `/track/<id>/pan` | `f` | `f32` | `0.0` | Track panning position. Range: `-1.0` (Hard Left) to `1.0` (Hard Right). |
 | `/track/<id>/mute` | `i`/`b` | `i32` / `bool` | `0` (false) | Mute (`1` / `true`) or unmute (`0` / `false`) the track. |
 | `/track/<id>/send/delay` | `f` | `f32` | `0.0` | Send level to the delay return track. Range: `0.0` (dry) to `1.0` (maximum send). |
+| `/track/<id>/send/reverb` | `f` | `f32` | `0.0` | Send level to the reverb return track. Range: `0.0` (dry) to `1.0` (maximum send). |
 | `/track/<id>/sidechain/source` | `i` | `i32` | `-1` | Set sidechain source track index. Range: `0` to `7`. Negative value (e.g., `-1`) disables it. |
 
 ### Mixer Return Delay Controls
@@ -218,6 +220,15 @@ These parameters control the stereo delay return track:
 | `/mixer/return/delay/spray` | `f` | `f32` | `0.02` | Granular delay randomized spray/jitter start offset in seconds. Range: `0.0` to `0.5` (0ms to 500ms). |
 | `/mixer/return/delay/pitch` | `f` | `f32` | `1.0` | Granular delay pitch scaling factor ratio. Range: `0.5` (one octave down) to `2.0` (one octave up). |
 
+### Mixer Return Reverb Controls
+
+These parameters control the stereo reverb return track:
+
+| Address | Arguments | Argument Types | Default Value | Reasonable Range / Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `/mixer/return/reverb/decay` <br>_or_ `/mixer/return/reverb/time` <br>_or_ `/mixer/return/reverb/size` | `f` | `f32` | `0.5` | Reverb size/decay time multiplier. Range: `0.0` (small room, fast decay) to `1.0` (infinite freeze sustain). |
+| `/mixer/return/reverb/tone` | `f` | `f32` | `0.0` | Reverb tone damping. Range: `-1.0` (dark room, damped LP) to `1.0` (bright room, high-cut HP). |
+
 ### Track FX Chain Controls
 
 Each track features an independent effects chain that can be modulated in real-time via OSC:
@@ -232,6 +243,14 @@ Each track features an independent effects chain that can be modulated in real-t
 | `/track/<id>/fx/distortion/mode` | `i` | `i32` | `0` | Saturation mode. `0` = Bypass, `1` = Tanh, `2` = HardClip, `3` = Wavefold. |
 | `/track/<id>/fx/distortion/drive` | `f` | `f32` | `1.0` | Distortion input gain/drive factor. Range: `0.0` to `10.0` (values > 1.0 increase saturation). |
 | `/track/<id>/fx/distortion/mix` | `f` | `f32` | `0.0` | Wet/dry distortion mix. Range: `0.0` (dry) to `1.0` (wet). |
+| `/track/<id>/fx/wavefolder/drive` | `f` | `f32` | `1.0` | Wavefolder input drive gain multiplier. Range: `>= 1.0`. |
+| `/track/<id>/fx/wavefolder/folds` | `f` | `f32` | `0.0` | Wavefolder folding intensity. Range: `0.0` (bypass) to `1.0+` (active folding). |
+| `/track/<id>/fx/wavefolder/symmetry` | `f` | `f32` | `0.0` | Wavefolder symmetry/DC offset shift before folding. Range: `-1.0` to `1.0`. |
+| `/track/<id>/fx/bitcrusher/bits` | `f` | `f32` | `16.0` | Bitcrusher quantization bit depth. Range: `1.0` to `16.0` (16.0 is bypass). |
+| `/track/<id>/fx/bitcrusher/downsample` | `i` | `i32` | `1` | Bitcrusher sample rate divider. Range: `1` (bypass) to `64` (hold samples for N steps). |
+| `/track/<id>/fx/comb/freq` | `f` | `f32` | `440.0` | Comb filter pitch tracking resonance frequency in Hz. Range: `20.0` to `10000.0`. |
+| `/track/<id>/fx/comb/feedback` | `f` | `f32` | `0.0` | Comb filter feedback ratio. Range: `-0.99` to `0.99` (0.0 is bypass). |
+| `/track/<id>/fx/comb/damp` | `f` | `f32` | `8000.0` | Comb filter feedback low-pass dampening cutoff frequency in Hz. |
 | `/track/<id>/fx/compressor/ratio` | `f` | `f32` | `1.0` | Compression ratio. Range: `1.0` (no compression) to `20.0` (heavy compression). |
 | `/track/<id>/fx/compressor/threshold`| `f` | `f32` | `-24.0` | Threshold in dB, below which compression is applied. Range: `-60.0` to `0.0`. |
 | `/track/<id>/fx/compressor/attack` | `f` | `f32` | `0.01` | Attack time in seconds. Range: `0.0` (instant) to `1.0`. |
@@ -389,7 +408,41 @@ A stereo positioning node for panning signals across a stereo field. Supports th
 A simple, single-channel ring-buffered delay line supporting linear fractional-delay interpolation. It is designed to be a lightweight building block for delay-based effects (such as Chorus, Flanger, and Vibrato).
 
 - **Parameters**:
-  - `delay_sec`: `f32` (interpolated delay duration in seconds). Range: `0.0` to maximum buffer capacity capacity.
+  - `delay_sec`: `f32` (interpolated delay duration in seconds). Range: `0.0` to maximum buffer capacity.
+
+### 14. Stereo Reverb (`aillen_core::dsp::StereoReverb`)
+
+A multi-stage Feedback Delay Network (FDN) / Plate Reverb featuring Elektron-style controls:
+
+- **Parameters**:
+  - `size_time`: `f32` (room size and decay factor). Default: `0.5`. Range: `0.0` (small room, fast decay) to `1.0` (infinite sustain / freeze).
+  - `tone`: `f32` (color damping). Default: `0.0`. Range: `-1.0` (dark room, damped LP) to `1.0` (bright room, high-cut HP).
+
+### 15. Wavefolder (`aillen_core::dsp::Wavefolder`)
+
+A non-linear wavefolder effect that folds waveforms exceeding a threshold back on themselves to generate rich, glassy, bright harmonics.
+
+- **Parameters**:
+  - `drive`: `f32` (input gain multiplier). Default: `1.0`. Range: `>= 1.0`.
+  - `folds`: `f32` (folding intensity/mix). Default: `0.0` (bypass). Range: `0.0` to `1.0+`.
+  - `symmetry`: `f32` (symmetry / DC offset shift before folding). Default: `0.0`. Range: `-1.0` to `1.0`.
+
+### 16. Bitcrusher (`aillen_core::dsp::Bitcrusher`)
+
+A digital audio degrader applying bit-depth quantization reduction and sample-and-hold downsampling.
+
+- **Parameters**:
+  - `bits`: `f32` (quantization bit depth). Default: `16.0` (bypass). Range: `1.0` to `16.0`.
+  - `downsample`: `usize` (sample rate divider / sample hold steps). Default: `1` (bypass). Range: `>= 1`.
+
+### 17. Comb Filter (`aillen_core::dsp::filter::CombFilter`)
+
+A pitch-tracked, feedback-damped Comb Filter for physical acoustic/metallic resonance.
+
+- **Parameters**:
+  - `frequency`: `f32` (resonance pitch frequency in Hz). Default: `440.0`. Range: `20.0` to `10000.0`.
+  - `feedback`: `f32` (feedback ratio). Default: `0.0` (bypass). Range: `-0.99` to `0.99`.
+  - `dampening_cutoff`: `f32` (cutoff frequency of the low-pass dampening filter in the feedback loop). Default: `8000.0` Hz.
 
 ---
 
