@@ -82,6 +82,8 @@ impl Track {
     }
 }
 
+use crate::synth::resonator::resonator::SynthResonator;
+
 /// The stereo master audio mixer containing all tracks, return tracks, and master volume controls.
 pub struct Mixer {
     /// Dynamic track list.
@@ -105,13 +107,13 @@ pub struct Mixer {
 }
 
 impl Mixer {
-    /// Initializes a new Mixer with Track 0 - 6 set up for the current sample rate.
+    /// Initializes a new Mixer with Track 0 - 7 set up for the current sample rate.
     pub fn new(sample_rate: f32, num_voices: usize) -> Self {
         let mut synth_track = Track::new(Box::new(TwoOpSynth::new(sample_rate, num_voices)), sample_rate);
         let mut sampler_track = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
         let mut sampler_track2 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
         let mut sampler_track3 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
-        let mut synth_track2 = Track::new(Box::new(TwoOpSynth::new(sample_rate, num_voices)), sample_rate);
+        let mut resonator_track = Track::new(Box::new(SynthResonator::new(sample_rate, num_voices)), sample_rate);
         let mut sampler_track4 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
         let mut synth303_track = Track::new(Box::new(Synth303::new(sample_rate, 1)), sample_rate);
         let mut hubass_track = Track::new(Box::new(SynthHubass::new(sample_rate, 1)), sample_rate);
@@ -121,7 +123,7 @@ impl Mixer {
         sampler_track.sidechain_source = None;
         sampler_track2.sidechain_source = None;
         sampler_track3.sidechain_source = None;
-        synth_track2.sidechain_source = Some(1);
+        resonator_track.sidechain_source = Some(1);
         sampler_track4.sidechain_source = None;
         synth303_track.sidechain_source = None;
         hubass_track.sidechain_source = None;
@@ -133,8 +135,9 @@ impl Mixer {
         let return_reverb = StereoReverb::new(sample_rate);
 
         Self {
-            tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, synth_track2, sampler_track4, synth303_track, hubass_track],
+            tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, resonator_track, sampler_track4, synth303_track, hubass_track],
             master_volume: 1.0,
+
             master_filter_l: DjFilter::new(sample_rate),
             master_filter_r: DjFilter::new(sample_rate),
             return_delay,

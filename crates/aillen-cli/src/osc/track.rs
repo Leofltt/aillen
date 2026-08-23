@@ -206,8 +206,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::SetTrackCombDamp { track_id, damp });
             }
         }
-        // Two-Op specific (Track 0 and Track 4)
-        "legato" if track_id == 0 || track_id == 4 => {
+        // Two-Op specific (Track 0)
+        "legato" if track_id == 0 => {
             if let Some(arg) = msg.args.get(0) {
                 let enabled = match arg {
                     rosc::OscType::Bool(b) => *b, rosc::OscType::Int(i) => *i > 0, rosc::OscType::Float(f) => *f > 0.5, _ => false,
@@ -215,7 +215,7 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetLegato { track_id, enabled });
             }
         }
-        "realtime" if track_id == 0 || track_id == 4 => {
+        "realtime" if track_id == 0 => {
             if let Some(arg) = msg.args.get(0) {
                 let enabled = match arg {
                     rosc::OscType::Bool(b) => *b, rosc::OscType::Int(i) => *i > 0, rosc::OscType::Float(f) => *f > 0.5, _ => false,
@@ -223,7 +223,7 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetRealtimeUpdate { track_id, enabled });
             }
         }
-        "mode" if track_id == 0 || track_id == 4 => {
+        "mode" if track_id == 0 => {
             if let Some(arg) = msg.args.get(0) {
                 let mode_idx = arg.clone().int().unwrap_or(0);
                 let mode = match mode_idx {
@@ -232,7 +232,59 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetMode { track_id, mode });
             }
         }
-        "osc1/waveform" if track_id == 0 || track_id == 4 => {
+        // SynthResonator specific (Track 4)
+        "exciter/adsr" if track_id == 4 => {
+            if msg.args.len() >= 4 {
+                let a = msg.args[0].clone().float().unwrap_or(0.001);
+                let d = msg.args[1].clone().float().unwrap_or(0.03);
+                let s = msg.args[2].clone().float().unwrap_or(0.0);
+                let r = msg.args[3].clone().float().unwrap_or(0.01);
+                let _ = prod.try_send(AudioMessage::ResonatorSetExciterAdsr { track_id, a, d, s, r });
+            }
+        }
+        "exciter/cutoff" if track_id == 4 => {
+            if let Some(cutoff) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetExciterCutoff { track_id, cutoff });
+            }
+        }
+        "feedback" if track_id == 4 => {
+            if let Some(feedback) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetFeedback { track_id, feedback });
+            }
+        }
+        "dampening" if track_id == 4 => {
+            if let Some(dampening) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetDampening { track_id, dampening });
+            }
+        }
+        "bend/drive" if track_id == 4 => {
+            if let Some(drive) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetBendDrive { track_id, drive });
+            }
+        }
+        "bend/folds" if track_id == 4 => {
+            if let Some(folds) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetBendFolds { track_id, folds });
+            }
+        }
+        "bend/bits" if track_id == 4 => {
+            if let Some(bits) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetBendBits { track_id, bits });
+            }
+        }
+        "modal/ratio" if track_id == 4 => {
+            if let Some(ratio) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetModalRatio { track_id, ratio });
+            }
+        }
+        "modal/mix" if track_id == 4 => {
+            if let Some(mix) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetModalMix { track_id, mix });
+            }
+        }
+
+        "osc1/waveform" if track_id == 0
+ => {
             if let Some(arg) = msg.args.get(0) {
                 let wf_idx = arg.clone().int().unwrap_or(0);
                 let waveform = match wf_idx {
@@ -241,7 +293,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetOsc1Waveform { track_id, waveform });
             }
         }
-        "osc2/waveform" if track_id == 0 || track_id == 4 => {
+        "osc2/waveform" if track_id == 0
+ => {
             if let Some(arg) = msg.args.get(0) {
                 let wf_idx = arg.clone().int().unwrap_or(0);
                 let waveform = match wf_idx {
@@ -250,7 +303,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetOsc2Waveform { track_id, waveform });
             }
         }
-        "osc1/adsr" if track_id == 0 || track_id == 4 => {
+        "osc1/adsr" if track_id == 0
+ => {
             if msg.args.len() >= 4 {
                 let a = msg.args[0].clone().float().unwrap_or(0.01);
                 let d = msg.args[1].clone().float().unwrap_or(0.1);
@@ -259,7 +313,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetOsc1Adsr { track_id, a, d, s, r });
             }
         }
-        "osc2/adsr" if track_id == 0 || track_id == 4 => {
+        "osc2/adsr" if track_id == 0
+ => {
             if msg.args.len() >= 4 {
                 let a = msg.args[0].clone().float().unwrap_or(0.01);
                 let d = msg.args[1].clone().float().unwrap_or(0.1);
@@ -268,7 +323,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetOsc2Adsr { track_id, a, d, s, r });
             }
         }
-        "filter/adsr" if track_id == 0 || track_id == 4 => {
+        "filter/adsr" if track_id == 0
+ => {
             if msg.args.len() >= 4 {
                 let a = msg.args[0].clone().float().unwrap_or(0.01);
                 let d = msg.args[1].clone().float().unwrap_or(0.1);
@@ -277,7 +333,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetFilterAdsr { track_id, a, d, s, r });
             }
         }
-        "filter/params" if track_id == 0 || track_id == 4 => {
+        "filter/params" if track_id == 0
+ => {
             if msg.args.len() >= 3 {
                 let cutoff = msg.args[0].clone().float().unwrap_or(1000.0);
                 let q = msg.args[1].clone().float().unwrap_or(0.707);
@@ -288,7 +345,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetFilterParams { track_id, cutoff, q, filter_type });
             }
         }
-        "filter/mod" if track_id == 0 || track_id == 4 => {
+        "filter/mod" if track_id == 0
+ => {
             if msg.args.len() >= 2 {
                 let enabled = match msg.args[0] {
                     rosc::OscType::Bool(b) => b, rosc::OscType::Int(i) => i > 0, rosc::OscType::Float(f) => f > 0.5, _ => false,
@@ -297,7 +355,8 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetFilterMod { track_id, enabled, amount });
             }
         }
-        "mod/params" if track_id == 0 || track_id == 4 => {
+        "mod/params" if track_id == 0
+ => {
             if msg.args.len() >= 3 {
                 let index = msg.args[0].clone().float().unwrap_or(1.0);
                 let ratio = msg.args[1].clone().float().unwrap_or(1.0);
@@ -305,33 +364,38 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetModulationParams { track_id, index, ratio, detune });
             }
         }
-        "feedback" | "twoop/feedback" if track_id == 0 || track_id == 4 => {
+        "feedback" | "twoop/feedback" if track_id == 0
+ => {
             if let Some(feedback) = msg.args.get(0).and_then(|a| a.clone().float()) {
                 let _ = prod.try_send(AudioMessage::TwoOpSetOsc2Feedback { track_id, feedback });
             }
         }
-        "wavefold" | "twoop/wavefold" if track_id == 0 || track_id == 4 => {
+        "wavefold" | "twoop/wavefold" if track_id == 0
+ => {
             if msg.args.len() >= 2 {
                 let gain = msg.args[0].clone().float().unwrap_or(1.0);
                 let mix = msg.args[1].clone().float().unwrap_or(0.0);
                 let _ = prod.try_send(AudioMessage::TwoOpSetWavefold { track_id, gain, mix });
             }
         }
-        "noise" | "twoop/noise" if track_id == 0 || track_id == 4 => {
+        "noise" | "twoop/noise" if track_id == 0
+ => {
             if msg.args.len() >= 2 {
                 let carrier_noise = msg.args[0].clone().float().unwrap_or(0.0);
                 let modulator_noise = msg.args[1].clone().float().unwrap_or(0.0);
                 let _ = prod.try_send(AudioMessage::TwoOpSetNoise { track_id, carrier_noise, modulator_noise });
             }
         }
-        "pitch/sweep" | "twoop/pitch/sweep" if track_id == 0 || track_id == 4 => {
+        "pitch/sweep" | "twoop/pitch/sweep" if track_id == 0
+ => {
             if msg.args.len() >= 2 {
                 let depth = msg.args[0].clone().float().unwrap_or(0.0);
                 let decay = msg.args[1].clone().float().unwrap_or(0.1);
                 let _ = prod.try_send(AudioMessage::TwoOpSetPitchSweep { track_id, depth, decay });
             }
         }
-        "lfo" | "twoop/lfo" if track_id == 0 || track_id == 4 => {
+        "lfo" | "twoop/lfo" if track_id == 0
+ => {
             if msg.args.len() >= 4 {
                 let waveform = msg.args[0].clone().int().unwrap_or(0) as usize;
                 let speed = msg.args[1].clone().float().unwrap_or(2.0);

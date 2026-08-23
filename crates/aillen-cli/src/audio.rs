@@ -6,7 +6,9 @@ use aillen_core::synth::two_op::two_op::TwoOpSynth;
 use aillen_core::synth::sampler::Sampler;
 use aillen_core::synth::synth303::synth303::Synth303;
 use aillen_core::synth::hubass::hubass::SynthHubass;
+use aillen_core::synth::resonator::resonator::SynthResonator;
 use anyhow::Result;
+
 use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::Receiver;
@@ -173,6 +175,18 @@ pub enum AudioMessage {
         mod_index: f32,
         cutoff: f32,
     },
+
+    // SynthResonator specific (Track 4)
+    ResonatorSetExciterAdsr { track_id: usize, a: f32, d: f32, s: f32, r: f32 },
+    ResonatorSetExciterCutoff { track_id: usize, cutoff: f32 },
+    ResonatorSetFeedback { track_id: usize, feedback: f32 },
+    ResonatorSetDampening { track_id: usize, dampening: f32 },
+    ResonatorSetBendDrive { track_id: usize, drive: f32 },
+    ResonatorSetBendFolds { track_id: usize, folds: f32 },
+    ResonatorSetBendBits { track_id: usize, bits: f32 },
+    ResonatorSetModalRatio { track_id: usize, ratio: f32 },
+    ResonatorSetModalMix { track_id: usize, mix: f32 },
+
 
     // Sampler specific
     /// Loads an audio file into the Sampler buffer.
@@ -440,6 +454,8 @@ pub fn start_audio_thread(
                                          synth303.trigger_note(freq, vel, duration_ms);
                                      } else if let Some(hubass) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthHubass>() {
                                          hubass.trigger_note(freq, vel, duration_ms);
+                                     } else if let Some(resonator) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         resonator.trigger_note(freq, vel, duration_ms);
                                      }
                                  }
                              }
@@ -1022,6 +1038,78 @@ pub fn start_audio_thread(
                                  if track_id < mixer.tracks.len() {
                                      mixer.tracks[track_id].fx_chain.comb_filter_l.dampening_filter.set_cutoff(damp);
                                      mixer.tracks[track_id].fx_chain.comb_filter_r.dampening_filter.set_cutoff(damp);
+                                 }
+                             }
+                             AudioMessage::ResonatorSetExciterAdsr { track_id, a, d, s, r } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.exciter_adsr = [a, d, s, r];
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetExciterCutoff { track_id, cutoff } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.exciter_cutoff = cutoff;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetFeedback { track_id, feedback } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.feedback = feedback;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetDampening { track_id, dampening } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.dampening = dampening;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetBendDrive { track_id, drive } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.bend_drive = drive;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetBendFolds { track_id, folds } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.bend_folds = folds;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetBendBits { track_id, bits } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.bend_bits = bits;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetModalRatio { track_id, ratio } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.modal_ratio = ratio;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetModalMix { track_id, mix } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.modal_mix = mix;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
                                  }
                              }
                             AudioMessage::SetMasterLimiterGain { gain } => {

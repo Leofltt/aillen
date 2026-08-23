@@ -6,6 +6,9 @@ pub mod sampler;
 pub mod synth303;
 /// Hubass synthesizer module.
 pub mod hubass;
+/// Circuit-Bent Karplus-Strong Resonator synthesizer module.
+pub mod resonator;
+
 
 use crate::dsp::AudioNode;
 

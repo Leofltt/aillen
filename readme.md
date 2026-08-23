@@ -166,7 +166,6 @@ The CLI launches an interactive ASCII Terminal User Interface (TUI) designed for
 
 ---
 
-
 ## 2. Audio Mixer & Instrument Tracks
 
 The engine supports a stereo Mixer with 8 instrument tracks and one delay return track:
@@ -175,7 +174,7 @@ The engine supports a stereo Mixer with 8 instrument tracks and one delay return
 - **Track 1**: `Sampler` (Sample playback engine with multi-format support via Symphonia)
 - **Track 2**: `Sampler`
 - **Track 3**: `Sampler`
-- **Track 4**: `TwoOp` (FM Synth)
+- **Track 4**: `SynthResonator` (Circuit-Bent Karplus-Strong & Modal Resonator Synthesizer)
 - **Track 5**: `Sampler`
 - **Track 6**: `Synth303` (Roland 303-like monophonic/legato bass synth)
 - **Track 7**: `SynthHubass` (Versatile Rave & Bass Synthesizer with detuned unison, filter-bypassed sub-bass, multi-mode filters, drive, LFO, and stereo chorus)
@@ -252,11 +251,11 @@ Each track features an independent effects chain that can be modulated in real-t
 | `/track/<id>/fx/comb/feedback` | `f` | `f32` | `0.0` | Comb filter feedback ratio. Range: `-0.99` to `0.99` (0.0 is bypass). |
 | `/track/<id>/fx/comb/damp` | `f` | `f32` | `8000.0` | Comb filter feedback low-pass dampening cutoff frequency in Hz. |
 | `/track/<id>/fx/compressor/ratio` | `f` | `f32` | `1.0` | Compression ratio. Range: `1.0` (no compression) to `20.0` (heavy compression). |
-| `/track/<id>/fx/compressor/threshold`| `f` | `f32` | `-24.0` | Threshold in dB, below which compression is applied. Range: `-60.0` to `0.0`. |
+| `/track/<id>/fx/compressor/threshold` | `f` | `f32` | `-24.0` | Threshold in dB, below which compression is applied. Range: `-60.0` to `0.0`. |
 | `/track/<id>/fx/compressor/attack` | `f` | `f32` | `0.01` | Attack time in seconds. Range: `0.0` (instant) to `1.0`. |
 | `/track/<id>/fx/compressor/release` | `f` | `f32` | `0.1` | Release time in seconds. Range: `0.01` to `5.0`. |
 | `/track/<id>/fx/compressor/makeup` | `f` | `f32` | `0.0` | Makeup gain in dB. Range: `-20.0` to `30.0`. |
-| `/track/<id>/fx/compressor/sidechain`| `i`/`b` | `i32` / `bool` | `0` (false) | Enable/disable sidechain compression modulated by external source. |
+| `/track/<id>/fx/compressor/sidechain` | `i`/`b` | `i32` / `bool` | `0` (false) | Enable/disable sidechain compression modulated by external source. |
 
 ### Note Control (Available on all Tracks)
 
@@ -448,7 +447,7 @@ A pitch-tracked, feedback-damped Comb Filter for physical acoustic/metallic reso
 
 ## 4. Instrument-Specific Settings
 
-### Track 0 & 4: TwoOp Synth
+### Track 0: TwoOp Synth
 
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -480,7 +479,7 @@ Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 | `/track/<id>/sample/mode` | `i` | `i32` | `0` | Playback mode. `0` = OneShot (default), `1` = Loop. |
 | `/track/<id>/sample/pitch` | `f` | `f32` | `1.0` | Base pitch shifting factor ratio. Range: `0.1` to `10.0`. |
 | `/track/<id>/sample/speed` | `f` | `f32` | `1.0` | Base playback speed factor ratio. Range: `0.1` to `10.0`. |
-| `/track/<id>/sample/mode/stretch`| `i` | `i32` | `0` | Time stretching mode. `0` = Resample (pitch/speed linked), `1` = Granular (independent pitch/time). |
+| `/track/<id>/sample/mode/stretch` | `i` | `i32` | `0` | Time stretching mode. `0` = Resample (pitch/speed linked), `1` = Granular (independent pitch/time). |
 | `/track/<id>/sample/grain_size` | `f` | `f32` | `40.0` | Granular grain size duration in milliseconds. Range: `5.0` to `500.0` ms. |
 | `/track/<id>/sample/overlap` | `i` | `i32` | `4` | Overlapping grain count. Range: `1` to `16`. |
 | `/track/<id>/filter` | `f` | `f32` | `0.0` | Sampler output channel DJ filter position. Low-Pass sweep: `-1.0` to `0.0` (20000 Hz down to 20 Hz). High-Pass sweep: `0.0` to `1.0` (20 Hz up to 20000 Hz). Center `0.0` is bypass. |
@@ -489,7 +488,24 @@ Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 | `/track/<id>/sample/slice/select` | `i` | `i32` | `0` | Active slice index selector. Range: `0` to `count - 1`. |
 | `/track/<id>/sample/slice/stutter` | `i` | `i32` | `1` | Stutter repetition count for slice re-triggering. Range: `1` to `64`. |
 
+### Track 4: SynthResonator (Circuit-Bent Karplus-Strong & Modal Resonator)
+
+A physical modeling string and modal synthesizer with a noise exciter, fractional delay line, parallel modal resonator, and internal circuit-bent wavefolding/bitcrushing distortion inside the feedback loop.
+
+| Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `/track/4/exciter/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.001, 0.03, 0.0, 0.01]` | Exciter noise burst ADSR parameters `[A, D, S, R]`. A/D/R (seconds): `0.001` to `10.0`. S (level): `0.0` to `1.0`. |
+| `/track/4/exciter/cutoff` | `f` | `f32` | `4000.0` | Exciter noise burst lowpass cutoff frequency in Hz. Range: `20.0` to `20000.0` Hz. |
+| `/track/4/feedback` | `f` | `f32` | `0.95` | Delay line decay feedback ratio. Range: `0.0` to `0.999`. |
+| `/track/4/dampening` | `f` | `f32` | `8000.0` | Internal feedback loop lowpass dampening cutoff frequency in Hz. Range: `200.0` to `20000.0` Hz. |
+| `/track/4/bend/drive` | `f` | `f32` | `1.0` | Circuit-bent wavefolder input drive multiplier inside feedback loop. Range: `1.0` to `10.0`. |
+| `/track/4/bend/folds` | `f` | `f32` | `0.0` | Circuit-bent wavefolder intensity inside feedback loop. Range: `0.0` (clean/bypass) to `5.0`. |
+| `/track/4/bend/bits` | `f` | `f32` | `16.0` | Circuit-bent bitcrusher quantization bits inside feedback loop. Range: `1.0` to `16.0` (16.0 is bypass). |
+| `/track/4/modal/ratio` | `f` | `f32` | `1.5` | Inharmonic detune ratio multiplier for parallel modal resonator filter. Range: `0.5` to `8.0`. |
+| `/track/4/modal/mix` | `f` | `f32` | `0.2` | Mix level ratio for parallel modal resonator output. Range: `0.0` (pure string) to `1.0` (pure modal). |
+
 ### Track 6: Synth303 (Acid Bass Synth)
+
 
 A monophonic, legato-enabled synthesizer mimicking the Roland TB-303.
 
