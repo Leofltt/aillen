@@ -42,6 +42,12 @@ The following ASCII diagram illustrates the audio signal path from the instrumen
                                     | Delay   | | Reverb  |   |
                                     +---------+ +---------+   |
                                          |           |        |
+                                         |           v        |
+                                         |     +---------+    |
+                                         |     | HighPass|    |
+                                         |     | (120 Hz)|    |
+                                         |     +---------+    |
+                                         |           |        |
                                          v           v        v
                                          +-----------+---> [Mixer Summing]
                                                               |
@@ -52,6 +58,8 @@ The following ASCII diagram illustrates the audio signal path from the instrumen
                                                      | Master DJFilter |
                                                      +-----------------+
                                                      | Master WaveLoss |
+                                                     +-----------------+
+                                                     | Master Limiter  |
                                                      +-----------------+
                                                               |
                                                               v
@@ -443,6 +451,20 @@ A pitch-tracked, feedback-damped Comb Filter for physical acoustic/metallic reso
   - `feedback`: `f32` (feedback ratio). Default: `0.0` (bypass). Range: `-0.99` to `0.99`.
   - `dampening_cutoff`: `f32` (cutoff frequency of the low-pass dampening filter in the feedback loop). Default: `8000.0` Hz.
 
+### 18. ADSR Envelope (`aillen_core::dsp::envelope::AdsrEnvelope`)
+
+A versatile attack-decay-sustain-release envelope generator supporting both clean linear sweeps and snappy analog-modeled exponential curves:
+
+- **Curve Modes (`EnvelopeCurve`)**:
+  - `Linear`: Constant rate-of-change segments, ideal for precise modulation and general synth patches.
+  - `Exponential`: Analog 1-pole RC charge/discharge curve using a virtual sub-zero target for snappy decays and punchy transient response (used in `Synth303`).
+- **Parameters**:
+  - `attack`: `f32` (seconds).
+  - `decay`: `f32` (seconds).
+  - `sustain`: `f32` (amplitude level, `0.0` to `1.0`).
+  - `release`: `f32` (seconds).
+  - `curve`: `EnvelopeCurve` (`Linear` or `Exponential`).
+
 ---
 
 ## 4. Instrument-Specific Settings
@@ -506,8 +528,7 @@ A physical modeling string and modal synthesizer with a noise exciter, fractiona
 
 ### Track 6: Synth303 (Acid Bass Synth)
 
-
-A monophonic, legato-enabled synthesizer mimicking the Roland TB-303.
+A monophonic, legato-enabled synthesizer mimicking the Roland TB-303. Features band-limited PolyBLEP oscillators (Saw/Square/PWM), exponential analog RC envelopes, and authentic velocity-sensitive accent dynamics (triggering at velocity > 0.7 to boost cutoff envelope, resonance, output volume, and non-linear liquid saturation).
 
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |

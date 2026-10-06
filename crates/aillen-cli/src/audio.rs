@@ -1,12 +1,15 @@
-use aillen_core::dsp::{filter::FilterType, oscillator::Waveform, ModulationSource, DelayMode, distortion::DistortionMode};
-use aillen_core::synth::two_op::SynthMode;
-use aillen_core::synth::sampler::{PlayMode, load_audio_file, StretchMode};
+use aillen_core::dsp::{
+    DelayMode, ModulationSource, distortion::DistortionMode, filter::FilterType,
+    oscillator::Waveform,
+};
 use aillen_core::mixer::Mixer;
-use aillen_core::synth::two_op::two_op::TwoOpSynth;
-use aillen_core::synth::sampler::Sampler;
-use aillen_core::synth::synth303::synth303::Synth303;
 use aillen_core::synth::hubass::hubass::SynthHubass;
 use aillen_core::synth::resonator::resonator::SynthResonator;
+use aillen_core::synth::sampler::Sampler;
+use aillen_core::synth::sampler::{PlayMode, StretchMode, load_audio_file};
+use aillen_core::synth::synth303::synth303::Synth303;
+use aillen_core::synth::two_op::SynthMode;
+use aillen_core::synth::two_op::two_op::TwoOpSynth;
 use anyhow::Result;
 
 use cpal::SampleFormat;
@@ -17,132 +20,132 @@ use std::sync::Arc;
 /// Message types sent from the OSC server thread to the real-time audio thread.
 pub enum AudioMessage {
     /// Triggers note start for a specific track.
-    TrackNoteOn { 
+    TrackNoteOn {
         /// Channel index in the Mixer.
-        track_id: usize, 
+        track_id: usize,
         /// Frequency in Hz.
-        freq: f32, 
+        freq: f32,
         /// Note velocity gain (0.0 to 1.0).
-        vel: f32 
+        vel: f32,
     },
     /// Triggers note release for a specific track.
-    TrackNoteOff { 
+    TrackNoteOff {
         /// Channel index in the Mixer.
-        track_id: usize, 
+        track_id: usize,
         /// Frequency in Hz.
-        freq: f32 
+        freq: f32,
     },
     /// Silences all active notes on a specific track immediately.
-    TrackNoteOffAll { 
+    TrackNoteOffAll {
         /// Channel index in the Mixer.
-        track_id: usize 
+        track_id: usize,
     },
     /// Plays a timed note (triggers on, then silences after duration_ms).
-    TrackTimedNote { 
+    TrackTimedNote {
         /// Channel index in the Mixer.
-        track_id: usize, 
+        track_id: usize,
         /// Frequency in Hz.
-        freq: f32, 
+        freq: f32,
         /// Note velocity gain.
-        vel: f32, 
+        vel: f32,
         /// Duration of the note in milliseconds.
-        duration_ms: f32 
+        duration_ms: f32,
     },
-    
+
     // TwoOp specific
     /// Sets Legato mode on the TwoOp synth.
-    TwoOpSetLegato { 
+    TwoOpSetLegato {
         track_id: usize,
         /// Legato toggle state.
-        enabled: bool 
+        enabled: bool,
     },
     /// Sets real-time parameter updating on active notes for the TwoOp synth.
-    TwoOpSetRealtimeUpdate { 
+    TwoOpSetRealtimeUpdate {
         track_id: usize,
         /// Toggle state.
-        enabled: bool 
+        enabled: bool,
     },
     /// Sets the active synthesis mode for the TwoOp synth.
-    TwoOpSetMode { 
+    TwoOpSetMode {
         track_id: usize,
         /// Synthesis algorithm.
-        mode: SynthMode 
+        mode: SynthMode,
     },
     /// Sets the waveform of Operator 1 (Carrier) for the TwoOp synth.
-    TwoOpSetOsc1Waveform { 
+    TwoOpSetOsc1Waveform {
         track_id: usize,
         /// Target waveform.
-        waveform: Waveform 
+        waveform: Waveform,
     },
     /// Sets the waveform of Operator 2 (Modulator) for the TwoOp synth.
-    TwoOpSetOsc2Waveform { 
+    TwoOpSetOsc2Waveform {
         track_id: usize,
         /// Target waveform.
-        waveform: Waveform 
+        waveform: Waveform,
     },
     /// Sets Operator 1 ADSR envelope parameters.
-    TwoOpSetOsc1Adsr { 
+    TwoOpSetOsc1Adsr {
         track_id: usize,
         /// Attack time in seconds.
-        a: f32, 
+        a: f32,
         /// Decay time in seconds.
-        d: f32, 
+        d: f32,
         /// Sustain level amplitude.
-        s: f32, 
+        s: f32,
         /// Release time in seconds.
-        r: f32 
+        r: f32,
     },
     /// Sets Operator 2 ADSR envelope parameters.
-    TwoOpSetOsc2Adsr { 
+    TwoOpSetOsc2Adsr {
         track_id: usize,
         /// Attack time in seconds.
-        a: f32, 
+        a: f32,
         /// Decay time in seconds.
-        d: f32, 
+        d: f32,
         /// Sustain level amplitude.
-        s: f32, 
+        s: f32,
         /// Release time in seconds.
-        r: f32 
+        r: f32,
     },
     /// Sets Filter Cutoff ADSR envelope parameters.
-    TwoOpSetFilterAdsr { 
+    TwoOpSetFilterAdsr {
         track_id: usize,
         /// Attack time in seconds.
-        a: f32, 
+        a: f32,
         /// Decay time in seconds.
-        d: f32, 
+        d: f32,
         /// Sustain level amplitude.
-        s: f32, 
+        s: f32,
         /// Release time in seconds.
-        r: f32 
+        r: f32,
     },
     /// Sets biquad filter properties.
-    TwoOpSetFilterParams { 
+    TwoOpSetFilterParams {
         track_id: usize,
         /// Base cutoff frequency in Hz.
-        cutoff: f32, 
+        cutoff: f32,
         /// Filter resonance Q-factor.
-        q: f32, 
+        q: f32,
         /// Biquad filter type.
-        filter_type: FilterType 
+        filter_type: FilterType,
     },
     /// Enables/disables filter cutoff envelope modulation and sets its depth.
-    TwoOpSetFilterMod { 
+    TwoOpSetFilterMod {
         track_id: usize,
         /// Toggle state.
-        enabled: bool, 
+        enabled: bool,
         /// Modulation depth in Hz.
-        amount: f32 
+        amount: f32,
     },
     /// Sets modulator synthesis properties.
-    TwoOpSetModulationParams { 
+    TwoOpSetModulationParams {
         track_id: usize,
         /// Modulation index.
-        index: f32, 
+        index: f32,
         /// Modulator frequency ratio relative to Carrier.
-        ratio: f32, 
+        ratio: f32,
         /// Modulator detuning in Hz.
-        detune: f32 
+        detune: f32,
     },
     /// Sets Operator 2 self-feedback.
     TwoOpSetOsc2Feedback {
@@ -177,59 +180,88 @@ pub enum AudioMessage {
     },
 
     // SynthResonator specific (Track 4)
-    ResonatorSetExciterAdsr { track_id: usize, a: f32, d: f32, s: f32, r: f32 },
-    ResonatorSetExciterCutoff { track_id: usize, cutoff: f32 },
-    ResonatorSetFeedback { track_id: usize, feedback: f32 },
-    ResonatorSetDampening { track_id: usize, dampening: f32 },
-    ResonatorSetBendDrive { track_id: usize, drive: f32 },
-    ResonatorSetBendFolds { track_id: usize, folds: f32 },
-    ResonatorSetBendBits { track_id: usize, bits: f32 },
-    ResonatorSetModalRatio { track_id: usize, ratio: f32 },
-    ResonatorSetModalMix { track_id: usize, mix: f32 },
-
+    ResonatorSetExciterAdsr {
+        track_id: usize,
+        a: f32,
+        d: f32,
+        s: f32,
+        r: f32,
+    },
+    ResonatorSetExciterCutoff {
+        track_id: usize,
+        cutoff: f32,
+    },
+    ResonatorSetFeedback {
+        track_id: usize,
+        feedback: f32,
+    },
+    ResonatorSetDampening {
+        track_id: usize,
+        dampening: f32,
+    },
+    ResonatorSetBendDrive {
+        track_id: usize,
+        drive: f32,
+    },
+    ResonatorSetBendFolds {
+        track_id: usize,
+        folds: f32,
+    },
+    ResonatorSetBendBits {
+        track_id: usize,
+        bits: f32,
+    },
+    ResonatorSetModalRatio {
+        track_id: usize,
+        ratio: f32,
+    },
+    ResonatorSetModalMix {
+        track_id: usize,
+        mix: f32,
+    },
 
     // Sampler specific
     /// Loads an audio file into the Sampler buffer.
-    SamplerLoadSample { 
+    SamplerLoadSample {
         track_id: usize,
         /// Path to the audio file on disk.
-        path: String 
+        path: String,
     },
     /// Sets the Sampler playback mode.
-    SamplerSetPlayMode { 
+    SamplerSetPlayMode {
         track_id: usize,
         /// Playback mode (OneShot or Loop).
-        mode: PlayMode 
+        mode: PlayMode,
     },
     /// Sets the Sampler pitch ratio factor.
-    SamplerSetPitchRatio { 
+    SamplerSetPitchRatio {
         track_id: usize,
         /// Pitch scaling multiplier.
-        ratio: f32 
+        ratio: f32,
     },
     /// Sets the Sampler playback speed ratio factor.
-    SamplerSetSpeedRatio { 
+    SamplerSetSpeedRatio {
         track_id: usize,
         /// Speed scaling multiplier.
-        ratio: f32 
+        ratio: f32,
     },
     /// Sets the Sampler time-stretching engine mode.
-    SamplerSetStretchMode { 
+    SamplerSetStretchMode {
         track_id: usize,
         /// Decoupled granular or linked resampler mode.
-        mode: StretchMode 
+        mode: StretchMode,
     },
     /// Sets Sampler grain duration size in milliseconds.
-    SamplerSetGrainSize { 
+    SamplerSetGrainSize {
         track_id: usize,
         /// Grain duration.
-        size_ms: f32 
+        size_ms: f32,
     },
     /// Sets Sampler overlapping grains count.
-    SamplerSetOverlap { 
+    SamplerSetOverlap {
         track_id: usize,
         /// Overlapping grains.
-        overlap: usize 
+        overlap: usize,
     },
     /// Loads a preloaded sample buffer directly into the Sampler buffer.
     SamplerLoadBuffer {
@@ -240,11 +272,11 @@ pub enum AudioMessage {
 
     // Mixer settings
     /// Sets the volume gain of a specific track.
-    SetTrackVolume { 
+    SetTrackVolume {
         /// Track index.
-        track_id: usize, 
+        track_id: usize,
         /// Volume gain.
-        volume: f32 
+        volume: f32,
     },
     /// Sets the sidechain source of a specific track.
     SetTrackSidechainSource {
@@ -254,127 +286,304 @@ pub enum AudioMessage {
         source_id: Option<usize>,
     },
     /// Sets the panning of a specific track.
-    SetTrackPan { 
+    SetTrackPan {
         /// Track index.
-        track_id: usize, 
+        track_id: usize,
         /// Panning value from -1.0 to 1.0.
-        pan: f32 
+        pan: f32,
     },
     /// Mutes or unmutes a specific track.
-    SetTrackMute { 
+    SetTrackMute {
         /// Track index.
-        track_id: usize, 
+        track_id: usize,
         /// Mute state.
-        mute: bool 
+        mute: bool,
     },
     /// Sets the global master output volume gain.
-    SetMasterVolume { 
+    SetMasterVolume {
         /// Master volume gain.
-        volume: f32 
+        volume: f32,
     },
     /// Sets the Sampler DJ performance filter position.
     SamplerSetDjFilter {
         track_id: usize,
         /// Position from -1.0 to 1.0.
-        position: f32
+        position: f32,
     },
     /// Enables/disables slice playback mode.
     SamplerSetSliceMode {
         track_id: usize,
         /// Toggle state.
-        enabled: bool
+        enabled: bool,
     },
     /// Sets the total number of slices.
     SamplerSetNumSlices {
         track_id: usize,
         /// Number of slices.
-        n: usize
+        n: usize,
     },
     /// Selects the active slice index.
     SamplerSetSelectedSlice {
         track_id: usize,
         /// Slice index.
-        slice: usize
+        slice: usize,
     },
     /// Sets the stutter repetitions count.
     SamplerSetStutterCount {
         track_id: usize,
         /// Repeat count.
-        count: usize
+        count: usize,
     },
     /// Sets the Mixer master output DJ performance filter position.
     MixerSetMasterFilter {
         /// Position from -1.0 to 1.0.
-        position: f32
+        position: f32,
     },
-    
+
     // Synth303 specific (Track 6)
-    Synth303SetWaveform { waveform: Waveform },
-    Synth303SetAmpAdsr { a: f32, d: f32, s: f32, r: f32 },
-    Synth303SetFilterAdsr { a: f32, d: f32, s: f32, r: f32 },
-    Synth303SetPitchAdsr { a: f32, d: f32, s: f32, r: f32 },
-    Synth303SetFilterParams { cutoff: f32, resonance: f32 },
-    Synth303SetFilterMod { amount: f32 },
-    Synth303SetPitchMod { amount: f32 },
-    Synth303SetPwmParams { pw: f32, rate: f32, depth: f32 },
-    Synth303SetGlideTime { seconds: f32 },
-    Synth303SetLegato { enabled: bool },
+    Synth303SetWaveform {
+        waveform: Waveform,
+    },
+    Synth303SetAmpAdsr {
+        a: f32,
+        d: f32,
+        s: f32,
+        r: f32,
+    },
+    Synth303SetFilterAdsr {
+        a: f32,
+        d: f32,
+        s: f32,
+        r: f32,
+    },
+    Synth303SetPitchAdsr {
+        a: f32,
+        d: f32,
+        s: f32,
+        r: f32,
+    },
+    Synth303SetFilterParams {
+        cutoff: f32,
+        resonance: f32,
+    },
+    Synth303SetFilterMod {
+        amount: f32,
+    },
+    Synth303SetPitchMod {
+        amount: f32,
+    },
+    Synth303SetPwmParams {
+        pw: f32,
+        rate: f32,
+        depth: f32,
+    },
+    Synth303SetGlideTime {
+        seconds: f32,
+    },
+    Synth303SetLegato {
+        enabled: bool,
+    },
 
     // SynthHubass specific (Track 7)
-    SynthHubassSetAmpAdsr { a: f32, d: f32, s: f32, r: f32 },
-    SynthHubassSetFilterParams { start_mult: f32, end_cf: f32, decay: f32, resonance: f32 },
-    SynthHubassSetOscUnison { waveform: i32, detune: f32, spread: f32, num_voices: i32 },
-    SynthHubassSetOscSub { waveform: i32, octave_offset: i32, gain: f32 },
-    SynthHubassSetOscNoise { gain: f32 },
-    SynthHubassSetFilterMode { mode: i32 },
-    SynthHubassSetDriveMode { mode: i32, gain: f32, mix: f32 },
-    SynthHubassSetLfo1 { waveform: i32, speed_hz: f32, cutoff_depth: f32, pitch_depth: f32 },
-    SynthHubassSetChorusParams { mix: f32, depth: f32 },
-    SynthHubassSetLegato { enabled: bool },
-    SynthHubassSetOutputGain { gain: f32 },
+    SynthHubassSetAmpAdsr {
+        a: f32,
+        d: f32,
+        s: f32,
+        r: f32,
+    },
+    SynthHubassSetFilterParams {
+        start_mult: f32,
+        end_cf: f32,
+        decay: f32,
+        resonance: f32,
+    },
+    SynthHubassSetOscUnison {
+        waveform: i32,
+        detune: f32,
+        spread: f32,
+        num_voices: i32,
+    },
+    SynthHubassSetOscSub {
+        waveform: i32,
+        octave_offset: i32,
+        gain: f32,
+    },
+    SynthHubassSetOscNoise {
+        gain: f32,
+    },
+    SynthHubassSetFilterMode {
+        mode: i32,
+    },
+    SynthHubassSetDriveMode {
+        mode: i32,
+        gain: f32,
+        mix: f32,
+    },
+    SynthHubassSetLfo1 {
+        waveform: i32,
+        speed_hz: f32,
+        cutoff_depth: f32,
+        pitch_depth: f32,
+    },
+    SynthHubassSetChorusParams {
+        mix: f32,
+        depth: f32,
+    },
+    SynthHubassSetLegato {
+        enabled: bool,
+    },
+    SynthHubassSetOutputGain {
+        gain: f32,
+    },
 
     // FxChain & Return Track settings
-    SetTrackSendDelay { track_id: usize, send: f32 },
-    SetTrackRmDepth { track_id: usize, depth: f32 },
-    SetTrackRmFreq { track_id: usize, freq: f32 },
-    SetTrackRmMode { track_id: usize, ring_mod: bool },
-    SetTrackRmSource { track_id: usize, source: usize },
-    SetTrackFxFilterPos { track_id: usize, pos: f32 },
-    SetTrackCompThreshold { track_id: usize, thresh: f32 },
-    SetTrackCompRatio { track_id: usize, ratio: f32 },
-    SetTrackCompAttack { track_id: usize, attack: f32 },
-    SetTrackCompRelease { track_id: usize, release: f32 },
-    SetTrackCompMakeup { track_id: usize, makeup: f32 },
-    SetReturnDelayTime { time: f32 },
-    SetReturnDelayFeedback { feedback: f32 },
-    SetReturnDelayMode { mode: usize },
-    SetReturnDelayPingPong { enabled: bool },
-    SetReturnDelayDrive { drive: f32 },
-    SetReturnDelayGrainSize { size: f32 },
-    SetReturnDelayDensity { density: usize },
-    SetReturnDelaySpray { spray: f32 },
-    SetReturnDelayPitch { pitch: f32 },
-    SetTrackCompSidechain { track_id: usize, enabled: bool },
-    SetTrackDistortionMode { track_id: usize, mode: i32 },
-    SetTrackDistortionDrive { track_id: usize, drive: f32 },
-    SetTrackDistortionMix { track_id: usize, mix: f32 },
-    SetMasterLimiterGain { gain: f32 },
-    SetMasterLimiterRelease { release: f32 },
-    SetMasterLimiterCeiling { ceiling: f32 },
-    SetMasterWlDrop { drop: usize },
-    SetMasterWlOutof { outof: usize },
-    SetMasterWlMode { mode: usize },
-    SetTrackSendReverb { track_id: usize, send: f32 },
-    SetReturnReverbSizeTime { size_time: f32 },
-    SetReturnReverbTone { tone: f32 },
-    SetTrackWfDrive { track_id: usize, drive: f32 },
-    SetTrackWfFolds { track_id: usize, folds: f32 },
-    SetTrackWfSymmetry { track_id: usize, symmetry: f32 },
-    SetTrackBitcrusherBits { track_id: usize, bits: f32 },
-    SetTrackBitcrusherDownsample { track_id: usize, downsample: usize },
-    SetTrackCombFreq { track_id: usize, freq: f32 },
-    SetTrackCombFeedback { track_id: usize, feedback: f32 },
-    SetTrackCombDamp { track_id: usize, damp: f32 },
+    SetTrackSendDelay {
+        track_id: usize,
+        send: f32,
+    },
+    SetTrackRmDepth {
+        track_id: usize,
+        depth: f32,
+    },
+    SetTrackRmFreq {
+        track_id: usize,
+        freq: f32,
+    },
+    SetTrackRmMode {
+        track_id: usize,
+        ring_mod: bool,
+    },
+    SetTrackRmSource {
+        track_id: usize,
+        source: usize,
+    },
+    SetTrackFxFilterPos {
+        track_id: usize,
+        pos: f32,
+    },
+    SetTrackCompThreshold {
+        track_id: usize,
+        thresh: f32,
+    },
+    SetTrackCompRatio {
+        track_id: usize,
+        ratio: f32,
+    },
+    SetTrackCompAttack {
+        track_id: usize,
+        attack: f32,
+    },
+    SetTrackCompRelease {
+        track_id: usize,
+        release: f32,
+    },
+    SetTrackCompMakeup {
+        track_id: usize,
+        makeup: f32,
+    },
+    SetReturnDelayTime {
+        time: f32,
+    },
+    SetReturnDelayFeedback {
+        feedback: f32,
+    },
+    SetReturnDelayMode {
+        mode: usize,
+    },
+    SetReturnDelayPingPong {
+        enabled: bool,
+    },
+    SetReturnDelayDrive {
+        drive: f32,
+    },
+    SetReturnDelayGrainSize {
+        size: f32,
+    },
+    SetReturnDelayDensity {
+        density: usize,
+    },
+    SetReturnDelaySpray {
+        spray: f32,
+    },
+    SetReturnDelayPitch {
+        pitch: f32,
+    },
+    SetTrackCompSidechain {
+        track_id: usize,
+        enabled: bool,
+    },
+    SetTrackDistortionMode {
+        track_id: usize,
+        mode: i32,
+    },
+    SetTrackDistortionDrive {
+        track_id: usize,
+        drive: f32,
+    },
+    SetTrackDistortionMix {
+        track_id: usize,
+        mix: f32,
+    },
+    SetMasterLimiterGain {
+        gain: f32,
+    },
+    SetMasterLimiterRelease {
+        release: f32,
+    },
+    SetMasterLimiterCeiling {
+        ceiling: f32,
+    },
+    SetMasterWlDrop {
+        drop: usize,
+    },
+    SetMasterWlOutof {
+        outof: usize,
+    },
+    SetMasterWlMode {
+        mode: usize,
+    },
+    SetTrackSendReverb {
+        track_id: usize,
+        send: f32,
+    },
+    SetReturnReverbSizeTime {
+        size_time: f32,
+    },
+    SetReturnReverbTone {
+        tone: f32,
+    },
+    SetTrackWfDrive {
+        track_id: usize,
+        drive: f32,
+    },
+    SetTrackWfFolds {
+        track_id: usize,
+        folds: f32,
+    },
+    SetTrackWfSymmetry {
+        track_id: usize,
+        symmetry: f32,
+    },
+    SetTrackBitcrusherBits {
+        track_id: usize,
+        bits: f32,
+    },
+    SetTrackBitcrusherDownsample {
+        track_id: usize,
+        downsample: usize,
+    },
+    SetTrackCombFreq {
+        track_id: usize,
+        freq: f32,
+    },
+    SetTrackCombFeedback {
+        track_id: usize,
+        feedback: f32,
+    },
+    SetTrackCombDamp {
+        track_id: usize,
+        damp: f32,
+    },
     GlobalPanic,
 }
 
@@ -384,7 +593,11 @@ pub fn list_audio_devices() -> Result<()> {
     let devices = host.output_devices()?;
     println!("Available Audio Devices:");
     for (i, device) in devices.enumerate() {
-        println!("{}. {}", i, device.name().unwrap_or_else(|_| "Unknown".to_string()));
+        println!(
+            "{}. {}",
+            i,
+            device.name().unwrap_or_else(|_| "Unknown".to_string())
+        );
     }
     Ok(())
 }
@@ -397,7 +610,7 @@ pub fn start_audio_thread(
     ui_handle: crate::ui::UiHandle,
 ) -> Result<cpal::Stream> {
     let host = cpal::default_host();
-    
+
     let device = if let Some(index) = device_index {
         host.output_devices()?
             .nth(index)
@@ -407,7 +620,10 @@ pub fn start_audio_thread(
             .ok_or_else(|| anyhow::anyhow!("No default audio output device available"))?
     };
 
-    println!("Using audio device: \"{}\"", device.name().unwrap_or_else(|_| "Unknown".to_string()));
+    println!(
+        "Using audio device: \"{}\"",
+        device.name().unwrap_or_else(|_| "Unknown".to_string())
+    );
 
     let config = device.default_output_config()?;
     let sample_rate = config.sample_rate().0 as f32;
@@ -422,10 +638,29 @@ pub fn start_audio_thread(
 
     let err_fn = |err| eprintln!("An error occurred on the audio stream: {}", err);
 
+    let mut ftz_daz_initialized = false;
+
     let stream = match config.sample_format() {
         SampleFormat::F32 => device.build_output_stream(
             &config.into(),
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                if !ftz_daz_initialized {
+                    #[cfg(target_arch = "x86_64")]
+                    unsafe {
+                        use std::arch::x86_64::*;
+                        _mm_setcsr(_mm_getcsr() | 0x8040); // 0x8000 = FTZ, 0x0040 = DAZ
+                    }
+                    #[cfg(target_arch = "aarch64")]
+                    unsafe {
+                        // Bit 24 of FPCR is FZ (Flush-to-Zero)
+                        let mut fpcr: u64;
+                        std::arch::asm!("mrs {}, fpcr", out(reg) fpcr);
+                        fpcr |= 1 << 24;
+                        std::arch::asm!("msr fpcr, {}", in(reg) fpcr);
+                    }
+                    ftz_daz_initialized = true;
+                }
+
                 for frame in data.chunks_mut(channels) {
                     while let Ok(msg) = rx.try_recv() {
                         match msg {
@@ -1142,7 +1377,7 @@ pub fn start_audio_thread(
                     }
 
                     let (track_outs, (sample_l, sample_r)) = mixer.process_detailed();
-                    ui_handle.record_audio_frame(&track_outs, sample_l, sample_r);
+                    ui_handle.record_audio_frame(track_outs, sample_l, sample_r);
                     if channels >= 2 {
                         frame[0] = sample_l;
                         frame[1] = sample_r;

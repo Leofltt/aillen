@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::io::{stdout, Write};
 use std::time::{Instant, Duration};
 use crossterm::{
@@ -306,62 +307,85 @@ impl UiData {
     }
 }
 
+// Helper to atomically maximize an f32 represented as an AtomicU32 holding IEEE-754 bits
+fn atomic_max_f32(atomic: &AtomicU32, val: f32) {
+    let mut current_bits = atomic.load(Ordering::Relaxed);
+    loop {
+        let current_val = f32::from_bits(current_bits);
+        if val <= current_val {
+            break;
+        }
+        match atomic.compare_exchange_weak(
+            current_bits,
+            val.to_bits(),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(actual) => current_bits = actual,
+        }
+    }
+}
+
+// Atomically reset and fetch value
+fn atomic_swap_f32(atomic: &AtomicU32) -> f32 {
+    let bits = atomic.swap(0.0f32.to_bits(), Ordering::Relaxed);
+    f32::from_bits(bits)
+}
+
 #[derive(Clone)]
 pub struct UiHandle {
     pub data: Arc<Mutex<UiData>>,
-    sample_counter: Arc<Mutex<usize>>,
-    peak_track_outputs: Arc<Mutex<Vec<(f32, f32)>>>,
-    peak_master: Arc<Mutex<(f32, f32)>>,
+    // Lock-free telemetry for the real-time audio callback:
+    // Tracks L & R maximum absolute peaks
+    track_peaks_l: Arc<Vec<AtomicU32>>,
+    track_peaks_r: Arc<Vec<AtomicU32>>,
+    // Master L & R maximum absolute peaks
+    master_peak_l: Arc<AtomicU32>,
+    master_peak_r: Arc<AtomicU32>,
 }
 
 impl UiHandle {
     pub fn new(num_tracks: usize) -> Self {
+        let mut track_peaks_l = Vec::with_capacity(num_tracks);
+        let mut track_peaks_r = Vec::with_capacity(num_tracks);
+        for _ in 0..num_tracks {
+            track_peaks_l.push(AtomicU32::new(0.0f32.to_bits()));
+            track_peaks_r.push(AtomicU32::new(0.0f32.to_bits()));
+        }
+
         Self {
             data: Arc::new(Mutex::new(UiData::new(num_tracks))),
-            sample_counter: Arc::new(Mutex::new(0)),
-            peak_track_outputs: Arc::new(Mutex::new(vec![(0.0, 0.0); num_tracks])),
-            peak_master: Arc::new(Mutex::new((0.0, 0.0))),
+            track_peaks_l: Arc::new(track_peaks_l),
+            track_peaks_r: Arc::new(track_peaks_r),
+            master_peak_l: Arc::new(AtomicU32::new(0.0f32.to_bits())),
+            master_peak_r: Arc::new(AtomicU32::new(0.0f32.to_bits())),
         }
     }
 
+    /// Hard real-time safe audio frame telemetry. Zero allocations, zero mutex locks.
     pub fn record_audio_frame(&self, track_outputs: &[(f32, f32)], master_l: f32, master_r: f32) {
-        // Accumulate peak values over 16-sample window so fast transients are captured
-        if let Ok(mut peaks) = self.peak_track_outputs.lock() {
-            for (idx, &(l, r)) in track_outputs.iter().enumerate() {
-                if idx < peaks.len() {
-                    if l.abs() > peaks[idx].0.abs() { peaks[idx].0 = l; }
-                    if r.abs() > peaks[idx].1.abs() { peaks[idx].1 = r; }
-                }
+        for (idx, &(l, r)) in track_outputs.iter().enumerate() {
+            if idx < self.track_peaks_l.len() {
+                atomic_max_f32(&self.track_peaks_l[idx], l.abs());
+                atomic_max_f32(&self.track_peaks_r[idx], r.abs());
             }
         }
-        if let Ok(mut m_peak) = self.peak_master.lock() {
-            if master_l.abs() > m_peak.0.abs() { m_peak.0 = master_l; }
-            if master_r.abs() > m_peak.1.abs() { m_peak.1 = master_r; }
+        atomic_max_f32(&self.master_peak_l, master_l.abs());
+        atomic_max_f32(&self.master_peak_r, master_r.abs());
+    }
+
+    /// Drains the accumulated atomic peaks into a scratch slice (called on UI thread only)
+    pub fn drain_peaks(&self, out_track_peaks: &mut [(f32, f32)]) -> (f32, f32) {
+        let count = out_track_peaks.len().min(self.track_peaks_l.len());
+        for i in 0..count {
+            let l = atomic_swap_f32(&self.track_peaks_l[i]);
+            let r = atomic_swap_f32(&self.track_peaks_r[i]);
+            out_track_peaks[i] = (l, r);
         }
-
-        let mut count = self.sample_counter.lock().unwrap();
-        *count += 1;
-        if *count % 16 == 0 {
-            let track_peaks = if let Ok(mut peaks) = self.peak_track_outputs.lock() {
-                let current = peaks.clone();
-                for p in peaks.iter_mut() { *p = (0.0, 0.0); }
-                current
-            } else {
-                vec![(0.0, 0.0); track_outputs.len()]
-            };
-
-            let (ml, mr) = if let Ok(mut m_peak) = self.peak_master.lock() {
-                let current = *m_peak;
-                *m_peak = (0.0, 0.0);
-                current
-            } else {
-                (0.0, 0.0)
-            };
-
-            if let Ok(mut data) = self.data.lock() {
-                data.push_samples(&track_peaks, ml, mr);
-            }
-        }
+        let ml = atomic_swap_f32(&self.master_peak_l);
+        let mr = atomic_swap_f32(&self.master_peak_r);
+        (ml, mr)
     }
 
     pub fn push_track_osc(&self, track_id: usize, msg: String) {
@@ -384,20 +408,27 @@ impl UiHandle {
 }
 
 /// Spawns the UI rendering loop thread at ~30 FPS (renders ONLY when dirty).
-pub fn start_ui_thread(ui_handle: UiHandle, _num_tracks: usize) {
+pub fn start_ui_thread(ui_handle: UiHandle, num_tracks: usize) {
     std::thread::spawn(move || {
         let mut stdout = stdout();
         let _ = execute!(stdout, terminal::Clear(ClearType::All), cursor::Hide);
 
         let update_interval = Duration::from_millis(33); // ~30 FPS
+        let mut track_peaks_scratch = vec![(0.0f32, 0.0f32); num_tracks];
 
         loop {
             std::thread::sleep(update_interval);
+
+            // Drain audio frame peaks from lock-free atomics into UI state
+            let (ml, mr) = ui_handle.drain_peaks(&mut track_peaks_scratch);
+
             let data_arc = ui_handle.data.clone();
             let mut data_guard = match data_arc.lock() {
                 Ok(g) => g,
                 Err(_) => break,
             };
+
+            data_guard.push_samples(&track_peaks_scratch, ml, mr);
 
             // Check 15-second inactivity timeout for clearing messages
             data_guard.check_inactivity_timeouts();

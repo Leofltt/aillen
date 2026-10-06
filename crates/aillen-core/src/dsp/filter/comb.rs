@@ -4,6 +4,7 @@ use crate::dsp::AudioProcessor;
 /// A pitch-tracked, feedback-damped Comb Filter for physical acoustic/metallic resonance.
 pub struct CombFilter {
     buffer: Vec<f32>,
+    mask: usize,
     write_pos: usize,
     sample_rate: f32,
 
@@ -14,12 +15,14 @@ pub struct CombFilter {
 
 impl CombFilter {
     pub fn new(sample_rate: f32, frequency: f32, feedback: f32, dampening_cutoff: f32) -> Self {
-        // Allocate buffer for frequencies down to 20Hz
-        let max_delay_samples = (sample_rate / 20.0).ceil() as usize + 2;
+        // Allocate buffer for frequencies down to 20Hz rounded up to power of two
+        let min_samples = (sample_rate / 20.0).ceil() as usize + 2;
+        let capacity = min_samples.max(4).next_power_of_two();
         let dampening_filter = BiquadFilter::new(sample_rate, dampening_cutoff, 0.707, FilterType::LowPass);
 
         Self {
-            buffer: vec![0.0; max_delay_samples],
+            buffer: vec![0.0; capacity],
+            mask: capacity - 1,
             write_pos: 0,
             sample_rate,
             frequency: frequency.clamp(20.0, 10000.0),
@@ -46,9 +49,8 @@ impl AudioProcessor for CombFilter {
         let delay_int = delay_samples.floor() as usize;
         let delay_frac = delay_samples - (delay_int as f32);
 
-        let buf_len = self.buffer.len();
-        let read_pos1 = (self.write_pos + buf_len - delay_int) % buf_len;
-        let read_pos2 = (self.write_pos + buf_len - delay_int - 1) % buf_len;
+        let read_pos1 = (self.write_pos + self.buffer.len() - delay_int) & self.mask;
+        let read_pos2 = (read_pos1 + self.buffer.len() - 1) & self.mask;
 
         // Linear interpolation read
         let delayed_raw = self.buffer[read_pos1] * (1.0 - delay_frac) + self.buffer[read_pos2] * delay_frac;
@@ -60,7 +62,7 @@ impl AudioProcessor for CombFilter {
         let feed_sample = input + delayed_damped * self.feedback;
         self.buffer[self.write_pos] = feed_sample;
 
-        self.write_pos = (self.write_pos + 1) % buf_len;
+        self.write_pos = (self.write_pos + 1) & self.mask;
 
         // Output mix
         let output = input + delayed_damped;

@@ -8,13 +8,35 @@ use crate::dsp::{
 use crate::synth::Voice;
 use super::{SynthMode, TwoOpPatch};
 
-/// Helper to evaluate naive waveforms at a given normalized phase [0.0, 1.0]
-fn eval_waveform(waveform: Waveform, phase: f32) -> f32 {
+/// PolyBLEP residual function to suppress aliasing around discontinuities
+fn poly_blep(t: f32, dt: f32) -> f32 {
+    if t < dt {
+        let t = t / dt;
+        t + t - t * t - 1.0
+    } else if t > 1.0 - dt {
+        let t = (t - 1.0) / dt;
+        t * t + t + t + 1.0
+    } else {
+        0.0
+    }
+}
+
+/// Helper to evaluate anti-aliased waveforms at a given normalized phase [0.0, 1.0] and phase step dt
+fn eval_waveform(waveform: Waveform, phase: f32, dt: f32) -> f32 {
     let t = phase.rem_euclid(1.0);
     match waveform {
         Waveform::Sine => (t * 2.0 * std::f32::consts::PI).sin(),
-        Waveform::Saw => 2.0 * t - 1.0,
-        Waveform::Square => if t < 0.5 { 1.0 } else { -1.0 },
+        Waveform::Saw => {
+            let naive = 2.0 * t - 1.0;
+            naive - poly_blep(t, dt)
+        }
+        Waveform::Square => {
+            let naive = if t < 0.5 { 1.0 } else { -1.0 };
+            let corr1 = poly_blep(t, dt);
+            let t2 = (t - 0.5).rem_euclid(1.0);
+            let corr2 = poly_blep(t2, dt);
+            naive + corr1 - corr2
+        }
         Waveform::Triangle => 1.0 - 4.0 * (t - 0.5).abs(),
     }
 }
@@ -69,6 +91,7 @@ pub struct TwoOpVoice {
     note_duration_samples: Option<usize>,
     samples_played: usize,
     rng_seed: u32,
+    control_counter: usize,
 }
 
 impl TwoOpVoice {
@@ -102,6 +125,7 @@ impl TwoOpVoice {
             note_duration_samples: None,
             samples_played: 0,
             rng_seed: 123456789,
+            control_counter: 0,
         }
     }
 
@@ -220,13 +244,16 @@ impl AudioNode for TwoOpVoice {
         // Pitch envelope modulation
         let current_base_freq = self.base_frequency * pitch_mult;
         
-        // Modulate filter cutoff with envelope and LFO
-        let mut cutoff = self.patch.filter_cutoff;
-        if self.patch.filter_mod_enabled {
-            cutoff += self.patch.filter_env_amount * f_env;
+        // Modulate filter cutoff with envelope and LFO at control rate (every 8 samples)
+        self.control_counter += 1;
+        if self.control_counter % 8 == 0 {
+            let mut cutoff = self.patch.filter_cutoff;
+            if self.patch.filter_mod_enabled {
+                cutoff += self.patch.filter_env_amount * f_env;
+            }
+            cutoff += self.patch.lfo_cutoff * lfo_val;
+            self.filter.set_cutoff(cutoff);
         }
-        cutoff += self.patch.lfo_cutoff * lfo_val;
-        self.filter.set_cutoff(cutoff);
         
         // Modulate FM index with LFO
         let active_mod_index = (self.patch.modulation_index + lfo_val * self.patch.lfo_mod_index).max(0.0);
@@ -251,7 +278,7 @@ impl AudioNode for TwoOpVoice {
 
         // 1. Operator 2 (Modulator) with self-feedback and phase noise
         let op2_phase = (self.osc2_phase + self.patch.osc2_feedback * self.osc2_prev_out + modulator_noise_offset) % 1.0;
-        let op2_raw = eval_waveform(self.patch.osc2_waveform, op2_phase);
+        let op2_raw = eval_waveform(self.patch.osc2_waveform, op2_phase, osc2_inc);
         self.osc2_prev_out = op2_raw;
         
         let op2_env_sig = op2_raw * env2;
@@ -263,24 +290,24 @@ impl AudioNode for TwoOpVoice {
         match self.patch.mode {
             SynthMode::Additive => {
                 let op1_phase = (self.osc1_phase + carrier_noise_offset) % 1.0;
-                let op1_sig = eval_waveform(self.patch.osc1_waveform, op1_phase) * env1;
+                let op1_sig = eval_waveform(self.patch.osc1_waveform, op1_phase, osc1_inc) * env1;
                 sample = op1_sig * 0.5 + op2_sig * 0.5;
             }
             SynthMode::Am => {
                 let op1_phase = (self.osc1_phase + carrier_noise_offset) % 1.0;
-                let op1_sig = eval_waveform(self.patch.osc1_waveform, op1_phase);
+                let op1_sig = eval_waveform(self.patch.osc1_waveform, op1_phase, osc1_inc);
                 sample = op1_sig * (1.0 + op2_sig * active_mod_index) * env1;
             }
             SynthMode::Rm => {
                 let op1_phase = (self.osc1_phase + carrier_noise_offset) % 1.0;
-                let op1_sig = eval_waveform(self.patch.osc1_waveform, op1_phase);
+                let op1_sig = eval_waveform(self.patch.osc1_waveform, op1_phase, osc1_inc);
                 sample = op1_sig * op2_sig * active_mod_index * env1;
             }
             SynthMode::Fm => {
                 // Implement PM (Phase Modulation)
                 // Note: scaling by base_frequency is omitted in PM to maintain stable modulation depth at different octaves.
                 let op1_phase = (self.osc1_phase + op2_sig * active_mod_index + carrier_noise_offset) % 1.0;
-                sample = eval_waveform(self.patch.osc1_waveform, op1_phase) * env1;
+                sample = eval_waveform(self.patch.osc1_waveform, op1_phase, osc1_inc) * env1;
             }
         }
         

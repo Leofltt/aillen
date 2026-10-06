@@ -47,6 +47,7 @@ pub struct HubassVoice {
 
     note_duration_samples: Option<usize>,
     samples_played: usize,
+    control_counter: usize,
 }
 
 impl HubassVoice {
@@ -93,6 +94,7 @@ impl HubassVoice {
             current_frequency: 220.0,
             note_duration_samples: None,
             samples_played: 0,
+            control_counter: 0,
         }
     }
 
@@ -186,29 +188,33 @@ impl HubassVoice {
         let lfo_cutoff_mod = self.patch.lfo1_cutoff_depth * lfo1_val * 1000.0;
         let final_cutoff = (env_cutoff + lfo_cutoff_mod).max(20.0);
 
+        // Subsample filter parameter updates to control rate (every 8 samples)
+        self.control_counter += 1;
+        if self.control_counter % 8 == 0 {
+            match self.patch.filter_mode {
+                1 => {
+                    self.filter_bp_l.set_cutoff(final_cutoff);
+                    self.filter_bp_l.set_q(self.patch.filter_resonance * 10.0 + 0.5);
+                    self.filter_bp_r.set_cutoff(final_cutoff);
+                    self.filter_bp_r.set_q(self.patch.filter_resonance * 10.0 + 0.5);
+                }
+                2 => {
+                    let vowel_morph = ((final_cutoff - 100.0) / 1500.0).clamp(0.0, 1.0);
+                    self.filter_formant_l.set_vowel(vowel_morph);
+                    self.filter_formant_r.set_vowel(vowel_morph);
+                }
+                _ => {
+                    self.filter_lp_l.set_params(final_cutoff, self.patch.filter_resonance);
+                    self.filter_lp_r.set_params(final_cutoff, self.patch.filter_resonance);
+                }
+            }
+        }
+
         // 4. Stereo Filtering
         let (filtered_l, filtered_r) = match self.patch.filter_mode {
-            1 => {
-                self.filter_bp_l.set_cutoff(final_cutoff);
-                self.filter_bp_l.set_q(self.patch.filter_resonance * 10.0 + 0.5);
-                self.filter_bp_r.set_cutoff(final_cutoff);
-                self.filter_bp_r.set_q(self.patch.filter_resonance * 10.0 + 0.5);
-
-                (self.filter_bp_l.process(osc_l), self.filter_bp_r.process(osc_r))
-            }
-            2 => {
-                let vowel_morph = ((final_cutoff - 100.0) / 1500.0).clamp(0.0, 1.0);
-                self.filter_formant_l.set_vowel(vowel_morph);
-                self.filter_formant_r.set_vowel(vowel_morph);
-
-                (self.filter_formant_l.process(osc_l), self.filter_formant_r.process(osc_r))
-            }
-            _ => {
-                self.filter_lp_l.set_params(final_cutoff, self.patch.filter_resonance);
-                self.filter_lp_r.set_params(final_cutoff, self.patch.filter_resonance);
-
-                (self.filter_lp_l.process(osc_l), self.filter_lp_r.process(osc_r))
-            }
+            1 => (self.filter_bp_l.process(osc_l), self.filter_bp_r.process(osc_r)),
+            2 => (self.filter_formant_l.process(osc_l), self.filter_formant_r.process(osc_r)),
+            _ => (self.filter_lp_l.process(osc_l), self.filter_lp_r.process(osc_r)),
         };
 
         // 5. Stereo Saturation / Distortion Drive

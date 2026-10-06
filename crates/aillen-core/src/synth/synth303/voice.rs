@@ -1,5 +1,5 @@
 use crate::dsp::{
-    envelope::AdsrEnvelope,
+    envelope::{AdsrEnvelope, EnvelopeCurve},
     filter::ResonantLadderFilter,
     AudioNode, AudioProcessor,
     oscillator::Waveform,
@@ -115,18 +115,20 @@ pub struct Synth303Voice {
     pub active: bool,
     pub base_frequency: f32,
     pub current_frequency: f32,
+    pub accent_amount: f32,
 
     note_duration_samples: Option<usize>,
     samples_played: usize,
+    control_counter: usize,
 }
 
 impl Synth303Voice {
     pub fn new(sample_rate: f32) -> Self {
         let patch = Synth303Patch::default();
         let osc = Synth303Oscillator::new(sample_rate);
-        let amp_env = AdsrEnvelope::new(sample_rate, patch.amp_adsr[0], patch.amp_adsr[1], patch.amp_adsr[2], patch.amp_adsr[3]);
-        let filter_env = AdsrEnvelope::new(sample_rate, patch.filter_adsr[0], patch.filter_adsr[1], patch.filter_adsr[2], patch.filter_adsr[3]);
-        let pitch_env = AdsrEnvelope::new(sample_rate, patch.pitch_adsr[0], patch.pitch_adsr[1], patch.pitch_adsr[2], patch.pitch_adsr[3]);
+        let amp_env = AdsrEnvelope::with_curve(sample_rate, patch.amp_adsr[0], patch.amp_adsr[1], patch.amp_adsr[2], patch.amp_adsr[3], EnvelopeCurve::Exponential);
+        let filter_env = AdsrEnvelope::with_curve(sample_rate, patch.filter_adsr[0], patch.filter_adsr[1], patch.filter_adsr[2], patch.filter_adsr[3], EnvelopeCurve::Exponential);
+        let pitch_env = AdsrEnvelope::with_curve(sample_rate, patch.pitch_adsr[0], patch.pitch_adsr[1], patch.pitch_adsr[2], patch.pitch_adsr[3], EnvelopeCurve::Exponential);
         let filter = ResonantLadderFilter::new(sample_rate);
 
         Self {
@@ -140,8 +142,10 @@ impl Synth303Voice {
             active: false,
             base_frequency: 220.0,
             current_frequency: 220.0,
+            accent_amount: 0.0,
             note_duration_samples: None,
             samples_played: 0,
+            control_counter: 0,
         }
     }
 
@@ -176,7 +180,11 @@ impl Synth303Voice {
 }
 
 impl Voice for Synth303Voice {
-    fn note_on(&mut self, frequency: f32, _velocity: f32) {
+    fn note_on(&mut self, frequency: f32, velocity: f32) {
+        // Calculate accent intensity: velocity > 0.7 triggers authentic 303 accent circuit
+        let vel = velocity.clamp(0.0, 1.0);
+        self.accent_amount = if vel > 0.7 { (vel - 0.7) / 0.3 } else { 0.0 };
+
         // If already active, we glide/portamento to the new frequency instead of retriggering envelopes
         if self.active {
             self.base_frequency = frequency;
@@ -250,15 +258,26 @@ impl AudioNode for Synth303Voice {
             self.patch.pwm_depth,
         );
 
-        // Apply filter with envelope modulation
-        let cutoff = (self.patch.filter_cutoff + self.patch.filter_env_amount * filter_val).max(20.0);
-        self.filter.set_params(cutoff, self.patch.filter_resonance);
+        // 303 Accent Dynamics: accent opens the cutoff higher, adds resonance bite, and increases drive
+        let accent_cutoff_boost = self.accent_amount * 2500.0 * filter_val;
+        let accent_resonance_boost = self.accent_amount * 0.15;
+        let cutoff = (self.patch.filter_cutoff + self.patch.filter_env_amount * filter_val + accent_cutoff_boost).max(20.0);
+        let resonance = (self.patch.filter_resonance + accent_resonance_boost).clamp(0.0, 0.98);
+
+        // Subsample filter parameter updates to control rate (every 8 samples)
+        self.control_counter += 1;
+        if self.control_counter % 8 == 0 {
+            self.filter.set_params(cutoff, resonance);
+        }
+
         let filtered_out = self.filter.process(osc_out);
 
-        // Apply amp envelope
-        let signal = filtered_out * amp_val;
+        // Apply amp envelope and accent volume boost
+        let amp_gain = 1.0 + self.accent_amount * 0.35;
+        let signal = filtered_out * amp_val * amp_gain;
         
-        // Soft-clip saturation: drive the signal slightly, shape with tanh, and scale back
-        (signal * 3.5).tanh() * 0.85
+        // Asymmetric liquid saturation: non-linear drive shaping with warm soft-clip
+        let driven = signal * (3.5 + self.accent_amount * 1.5);
+        driven.tanh() * 0.85
     }
 }

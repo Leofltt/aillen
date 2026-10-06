@@ -3,5 +3,5 @@ pub mod adsr;
 /// Exponential sweep decay envelope generator.
 pub mod expon;
 
-pub use adsr::{AdsrEnvelope, EnvelopeState};
+pub use adsr::{AdsrEnvelope, EnvelopeState, EnvelopeCurve};
 pub use expon::ExponEnvelope;

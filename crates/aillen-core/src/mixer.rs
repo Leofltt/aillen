@@ -84,6 +84,10 @@ impl Track {
 
 use crate::synth::resonator::resonator::SynthResonator;
 
+use crate::dsp::filter::biquad::{BiquadFilter, FilterType};
+
+pub const MAX_TRACKS: usize = 8;
+
 /// The stereo master audio mixer containing all tracks, return tracks, and master volume controls.
 pub struct Mixer {
     /// Dynamic track list.
@@ -98,12 +102,19 @@ pub struct Mixer {
     pub return_delay: StereoDelay,
     /// The return track containing an Elektron-style stereo reverb.
     pub return_reverb: StereoReverb,
+    /// High-pass mono-maker filter for return reverb (left).
+    pub return_reverb_hp_l: BiquadFilter,
+    /// High-pass mono-maker filter for return reverb (right).
+    pub return_reverb_hp_r: BiquadFilter,
     /// Master wavelosser left channel.
     pub master_waveloss_l: WaveLoss,
     /// Master wavelosser right channel.
     pub master_waveloss_r: WaveLoss,
     /// Master look-ahead limiter at the end of the chain.
     pub master_limiter: Limiter,
+    // Real-time scratch buffers to eliminate per-sample heap allocations
+    sidechain_scratch: [(f32, f32); MAX_TRACKS],
+    track_outs_scratch: [(f32, f32); MAX_TRACKS],
 }
 
 impl Mixer {
@@ -119,11 +130,11 @@ impl Mixer {
         let mut hubass_track = Track::new(Box::new(SynthHubass::new(sample_rate, 1)), sample_rate);
         
         // Default cross-sidechaining configuration
-        synth_track.sidechain_source = Some(1);
+        synth_track.sidechain_source = None;
         sampler_track.sidechain_source = None;
         sampler_track2.sidechain_source = None;
         sampler_track3.sidechain_source = None;
-        resonator_track.sidechain_source = Some(1);
+        resonator_track.sidechain_source = None;
         sampler_track4.sidechain_source = None;
         synth303_track.sidechain_source = None;
         hubass_track.sidechain_source = None;
@@ -133,6 +144,8 @@ impl Mixer {
         return_delay.mix = 1.0; // Full on wet by default
 
         let return_reverb = StereoReverb::new(sample_rate);
+        let return_reverb_hp_l = BiquadFilter::new(sample_rate, 120.0, 0.707, FilterType::HighPass);
+        let return_reverb_hp_r = BiquadFilter::new(sample_rate, 120.0, 0.707, FilterType::HighPass);
 
         Self {
             tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, resonator_track, sampler_track4, synth303_track, hubass_track],
@@ -142,9 +155,13 @@ impl Mixer {
             master_filter_r: DjFilter::new(sample_rate),
             return_delay,
             return_reverb,
+            return_reverb_hp_l,
+            return_reverb_hp_r,
             master_waveloss_l: WaveLoss::new(),
             master_waveloss_r: WaveLoss::new(),
             master_limiter: Limiter::new(sample_rate, 2.0),
+            sidechain_scratch: [(0.0, 0.0); MAX_TRACKS],
+            track_outs_scratch: [(0.0, 0.0); MAX_TRACKS],
         }
     }
 
@@ -161,14 +178,14 @@ impl Mixer {
 
     /// Processes and sums a single stereo output sample frame across all tracks, applying return delay, return reverb, master volume, master filter, and master waveloss.
     pub fn process(&mut self) -> (f32, f32) {
-        // 1. Gather sidechain signals from source tracks based on their indices
-        let mut sidechains = vec![(0.0f32, 0.0f32); self.tracks.len()];
-        for i in 0..self.tracks.len() {
-            if let Some(src_idx) = self.tracks[i].sidechain_source {
-                if src_idx < self.tracks.len() {
-                    sidechains[i] = self.tracks[src_idx].prev_out;
-                }
-            }
+        let num_tracks = self.tracks.len().min(MAX_TRACKS);
+
+        // 1. Gather sidechain signals into pre-allocated scratch buffer
+        for i in 0..num_tracks {
+            self.sidechain_scratch[i] = match self.tracks[i].sidechain_source {
+                Some(src_idx) if src_idx < self.tracks.len() => self.tracks[src_idx].prev_out,
+                _ => (0.0, 0.0),
+            };
         }
 
         // 2. Process all tracks
@@ -179,8 +196,8 @@ impl Mixer {
         let mut send_reverb_l = 0.0;
         let mut send_reverb_r = 0.0;
 
-        for i in 0..self.tracks.len() {
-            let (sc_l, sc_r) = sidechains[i];
+        for i in 0..num_tracks {
+            let (sc_l, sc_r) = self.sidechain_scratch[i];
             let (track_l, track_r) = self.tracks[i].process(sc_l, sc_r);
             out_l += track_l;
             out_r += track_r;
@@ -192,7 +209,10 @@ impl Mixer {
 
         // 3. Process return delay and return reverb tracks (100% wet)
         let (delay_l, delay_r) = self.return_delay.process_stereo(send_delay_l, send_delay_r);
-        let (reverb_l, reverb_r) = self.return_reverb.process_stereo(send_reverb_l, send_reverb_r);
+        let (raw_reverb_l, raw_reverb_r) = self.return_reverb.process_stereo(send_reverb_l, send_reverb_r);
+        // High-pass filter return reverb (<120 Hz) to keep low-end/sub-bass tight and clean
+        let reverb_l = self.return_reverb_hp_l.process(raw_reverb_l);
+        let reverb_r = self.return_reverb_hp_r.process(raw_reverb_r);
 
         // Sum dry signals with return tracks output
         let master_in_l = (out_l + delay_l + reverb_l) * self.master_volume;
@@ -208,19 +228,18 @@ impl Mixer {
         self.master_limiter.process_stereo(final_l, final_r)
     }
 
+    /// Processes a single frame and returns both per-track outputs (as a zero-alloc slice) and the final master output.
+    pub fn process_detailed(&mut self) -> (&[(f32, f32)], (f32, f32)) {
+        let num_tracks = self.tracks.len().min(MAX_TRACKS);
 
-    /// Processes a single frame and returns both per-track outputs and the final master output.
-    pub fn process_detailed(&mut self) -> (Vec<(f32, f32)>, (f32, f32)) {
-        let mut sidechains = vec![(0.0f32, 0.0f32); self.tracks.len()];
-        for i in 0..self.tracks.len() {
-            if let Some(src_idx) = self.tracks[i].sidechain_source {
-                if src_idx < self.tracks.len() {
-                    sidechains[i] = self.tracks[src_idx].prev_out;
-                }
-            }
+        // 1. Gather sidechain signals
+        for i in 0..num_tracks {
+            self.sidechain_scratch[i] = match self.tracks[i].sidechain_source {
+                Some(src_idx) if src_idx < self.tracks.len() => self.tracks[src_idx].prev_out,
+                _ => (0.0, 0.0),
+            };
         }
 
-        let mut track_outs = Vec::with_capacity(self.tracks.len());
         let mut out_l = 0.0;
         let mut out_r = 0.0;
         let mut send_delay_l = 0.0;
@@ -228,10 +247,10 @@ impl Mixer {
         let mut send_reverb_l = 0.0;
         let mut send_reverb_r = 0.0;
 
-        for i in 0..self.tracks.len() {
-            let (sc_l, sc_r) = sidechains[i];
+        for i in 0..num_tracks {
+            let (sc_l, sc_r) = self.sidechain_scratch[i];
             let (track_l, track_r) = self.tracks[i].process(sc_l, sc_r);
-            track_outs.push((track_l, track_r));
+            self.track_outs_scratch[i] = (track_l, track_r);
             out_l += track_l;
             out_r += track_r;
             send_delay_l += track_l * self.tracks[i].send_delay;
@@ -241,7 +260,9 @@ impl Mixer {
         }
 
         let (delay_l, delay_r) = self.return_delay.process_stereo(send_delay_l, send_delay_r);
-        let (reverb_l, reverb_r) = self.return_reverb.process_stereo(send_reverb_l, send_reverb_r);
+        let (raw_reverb_l, raw_reverb_r) = self.return_reverb.process_stereo(send_reverb_l, send_reverb_r);
+        let reverb_l = self.return_reverb_hp_l.process(raw_reverb_l);
+        let reverb_r = self.return_reverb_hp_r.process(raw_reverb_r);
 
         let master_in_l = (out_l + delay_l + reverb_l) * self.master_volume;
         let master_in_r = (out_r + delay_r + reverb_r) * self.master_volume;
@@ -253,7 +274,7 @@ impl Mixer {
         let final_r = self.master_waveloss_r.process(filt_r);
 
         let (limited_l, limited_r) = self.master_limiter.process_stereo(final_l, final_r);
-        (track_outs, (limited_l, limited_r))
+        (&self.track_outs_scratch[..num_tracks], (limited_l, limited_r))
     }
 }
 
