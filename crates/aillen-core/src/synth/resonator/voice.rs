@@ -108,7 +108,7 @@ impl ResonatorVoice {
         let loop_wavefolder = Wavefolder::new(patch.bend_drive, patch.bend_folds, 0.0);
         let loop_bitcrusher = Bitcrusher::new(patch.bend_bits, 1);
 
-        let modal_filter = BiquadFilter::new(sample_rate, 440.0 * patch.modal_ratio, 10.0, FilterType::BandPass);
+        let modal_filter = BiquadFilter::new(sample_rate, 440.0 * patch.modal_ratio, 2.5, FilterType::BandPass);
 
         Self {
             sample_rate,
@@ -164,7 +164,9 @@ impl ResonatorVoice {
         self.note_duration_samples = None;
         self.samples_played = 0;
 
-        // Reset/seed delay line with immediate excitation noise burst
+        // Reset delay line and seed with immediate excitation noise burst
+        self.delay_buffer.fill(0.0);
+        self.write_pos = 0;
         let delay_len = (self.sample_rate / self.current_frequency).clamp(2.0, (self.delay_buffer.len() - 2) as f32) as usize;
         for i in 0..delay_len {
             let noise = self.noise_gen.next_f32();
@@ -219,13 +221,13 @@ impl AudioNode for ResonatorVoice {
 
         let delayed_sample = self.delay_buffer[read_pos1] * (1.0 - delay_frac) + self.delay_buffer[read_pos2] * delay_frac;
 
-        // 3. Process Circuit-Bent Feedback Loop: Dampening -> Wavefolder -> Bitcrusher
-        let damped = self.loop_dampening.process(delayed_sample);
-        let folded = self.loop_wavefolder.process(damped);
+        // 3. Process Circuit-Bent Feedback Loop: Wavefolder -> Bitcrusher -> Dampening Lowpass
+        let folded = self.loop_wavefolder.process(delayed_sample);
         let crushed = self.loop_bitcrusher.process(folded);
+        let damped = self.loop_dampening.process(crushed);
 
         // Feedback calculation with soft clipping to prevent runaway oscillation
-        let feedback_sample = (exciter_sample + crushed * self.patch.feedback.clamp(0.0, 0.999)).tanh();
+        let feedback_sample = (exciter_sample + damped * self.patch.feedback.clamp(0.0, 0.995)).tanh();
         self.delay_buffer[self.write_pos] = feedback_sample;
 
         self.write_pos = (self.write_pos + 1) % buf_len;
@@ -239,6 +241,7 @@ impl AudioNode for ResonatorVoice {
         // Silence check if excitation died out and output is near zero
         if exciter_amp <= 0.0001 && output.abs() < 1e-4 {
             self.active = false;
+            self.delay_buffer.fill(0.0);
         }
 
         output

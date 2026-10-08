@@ -2,7 +2,7 @@ use crate::dsp::{
     envelope::{AdsrEnvelope, EnvelopeCurve},
     filter::ResonantLadderFilter,
     AudioNode, AudioProcessor,
-    oscillator::Waveform,
+    oscillator::{poly_blep, Waveform},
 };
 use crate::synth::Voice;
 use super::Synth303Patch;
@@ -24,17 +24,6 @@ impl Synth303Oscillator {
         }
     }
 
-    fn poly_blep(t: f32, dt: f32) -> f32 {
-        if t < dt {
-            let t = t / dt;
-            t + t - t * t - 1.0
-        } else if t > 1.0 - dt {
-            let t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
-        } else {
-            0.0
-        }
-    }
 
     pub fn process(&mut self, frequency: f32, waveform: Waveform, pw: f32, pwm_rate: f32, pwm_depth: f32) -> f32 {
         let dt = frequency / self.sample_rate;
@@ -55,27 +44,27 @@ impl Synth303Oscillator {
                 let naive = if self.phase < effective_pw { 1.0 } else { -1.0 };
                 
                 // PolyBLEP correction at 0.0 (rising transition)
-                let corr1 = Self::poly_blep(self.phase, dt);
+                let corr1 = poly_blep(self.phase, dt);
                 
                 // PolyBLEP correction at effective_pw (falling transition)
                 let mut phase2 = self.phase - effective_pw;
                 if phase2 < 0.0 {
                     phase2 += 1.0;
                 }
-                let corr2 = Self::poly_blep(phase2, dt);
+                let corr2 = poly_blep(phase2, dt);
                 
                 naive + corr1 - corr2
             }
             Waveform::Saw => {
                 // If pwm_depth > 0, we mix a second phase-shifted saw to get PWM saw texture
                 let naive1 = 2.0 * self.phase - 1.0;
-                let corr1 = Self::poly_blep(self.phase, dt);
+                let corr1 = poly_blep(self.phase, dt);
                 let saw1 = naive1 - corr1;
 
                 if pwm_depth > 0.01 {
                     let phase2 = (self.phase + effective_pw) % 1.0;
                     let naive2 = 2.0 * phase2 - 1.0;
-                    let corr2 = Self::poly_blep(phase2, dt);
+                    let corr2 = poly_blep(phase2, dt);
                     let saw2 = naive2 - corr2;
                     // Blend based on pwm_depth
                     saw1 * (1.0 - pwm_depth * 0.5) + saw2 * (pwm_depth * 0.5)

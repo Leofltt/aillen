@@ -1,10 +1,11 @@
 use aillen_core::dsp::{
     DelayMode, ModulationSource, distortion::DistortionMode, filter::FilterType,
-    oscillator::Waveform,
+    oscillator::{Waveform, SubWaveform},
 };
 use aillen_core::mixer::Mixer;
 use aillen_core::synth::hubass::hubass::SynthHubass;
 use aillen_core::synth::resonator::resonator::SynthResonator;
+use aillen_core::synth::swave::{swave::SwaveSynth, SwaveMode};
 use aillen_core::synth::sampler::Sampler;
 use aillen_core::synth::sampler::{PlayMode, StretchMode, load_audio_file};
 use aillen_core::synth::synth303::synth303::Synth303;
@@ -152,6 +153,25 @@ pub enum AudioMessage {
         track_id: usize,
         feedback: f32,
     },
+    /// Sets Operator 1 (Carrier) self-feedback.
+    TwoOpSetOsc1Feedback {
+        track_id: usize,
+        feedback: f32,
+    },
+    /// Sets static ratio quantization mode (Monomachine FM+STATIC style).
+    TwoOpSetRatioQuantize {
+        track_id: usize,
+        enabled: bool,
+        ratio_index: usize,
+    },
+    /// Sets Monomachine-inspired Base & Width filter settings.
+    TwoOpSetBaseWidthFilter {
+        track_id: usize,
+        enabled: bool,
+        base: f32,
+        width: f32,
+        hp_q: f32,
+    },
     /// Sets Operator 2 wavefolder.
     TwoOpSetWavefold {
         track_id: usize,
@@ -177,6 +197,64 @@ pub enum AudioMessage {
         speed: f32,
         mod_index: f32,
         cutoff: f32,
+    },
+
+    // Swave Synth specific
+    SwaveSetMode {
+        track_id: usize,
+        mode: SwaveMode,
+    },
+    SwaveSetBaseWaveform {
+        track_id: usize,
+        waveform: Waveform,
+    },
+    SwaveSetUnison {
+        track_id: usize,
+        detune: f32,
+        level: f32,
+        ext_level: f32,
+        stereo_spread: f32,
+    },
+    SwaveSetEnsemble {
+        track_id: usize,
+        interval2: f32,
+        interval3: f32,
+        interval4: f32,
+        level: f32,
+    },
+    SwaveSetSubOsc {
+        track_id: usize,
+        waveform: SubWaveform,
+        octave: i32,
+        gain: f32,
+    },
+    SwaveSetFilter {
+        track_id: usize,
+        base: f32,
+        width: f32,
+        hp_q: f32,
+        lp_q: f32,
+        env_amount: f32,
+    },
+    SwaveSetAmpAdsr {
+        track_id: usize,
+        a: f32,
+        d: f32,
+        s: f32,
+        r: f32,
+    },
+    SwaveSetFilterAdsr {
+        track_id: usize,
+        a: f32,
+        d: f32,
+        s: f32,
+        r: f32,
+    },
+    SwaveSetDrive {
+        track_id: usize,
+        mode: DistortionMode,
+        gain: f32,
+        mix: f32,
     },
 
     // SynthResonator specific (Track 4)
@@ -691,6 +769,8 @@ pub fn start_audio_thread(
                                          hubass.trigger_note(freq, vel, duration_ms);
                                      } else if let Some(resonator) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
                                          resonator.trigger_note(freq, vel, duration_ms);
+                                     } else if let Some(swave) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                         swave.trigger_note(freq, vel, duration_ms);
                                      }
                                  }
                              }
@@ -778,6 +858,27 @@ pub fn start_audio_thread(
                                       }
                                   }
                               }
+                              AudioMessage::TwoOpSetOsc1Feedback { track_id, feedback } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_osc1_feedback(feedback);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetRatioQuantize { track_id, enabled, ratio_index } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_ratio_quantize(enabled, ratio_index);
+                                      }
+                                  }
+                              }
+                              AudioMessage::TwoOpSetBaseWidthFilter { track_id, enabled, base, width, hp_q } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
+                                          synth.set_base_width_filter(enabled, base, width, hp_q);
+                                      }
+                                  }
+                              }
                               AudioMessage::TwoOpSetWavefold { track_id, gain, mix } => {
                                   if track_id < mixer.tracks.len() {
                                       if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
@@ -803,6 +904,69 @@ pub fn start_audio_thread(
                                   if track_id < mixer.tracks.len() {
                                       if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                           synth.set_lfo(waveform, speed, mod_index, cutoff);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetMode { track_id, mode } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_mode(mode);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetBaseWaveform { track_id, waveform } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_base_waveform(waveform);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetUnison { track_id, detune, level, ext_level, stereo_spread } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_unison(detune, level, ext_level, stereo_spread);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetEnsemble { track_id, interval2, interval3, interval4, level } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_ensemble(interval2, interval3, interval4, level);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetSubOsc { track_id, waveform, octave, gain } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_sub_osc(waveform, octave, gain);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetFilter { track_id, base, width, hp_q, lp_q, env_amount } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_filter(base, width, hp_q, lp_q, env_amount);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetAmpAdsr { track_id, a, d, s, r } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_amp_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetFilterAdsr { track_id, a, d, s, r } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_filter_adsr(a, d, s, r);
+                                      }
+                                  }
+                              }
+                              AudioMessage::SwaveSetDrive { track_id, mode, gain, mix } => {
+                                  if track_id < mixer.tracks.len() {
+                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
+                                          synth.set_drive(mode, gain, mix);
                                       }
                                   }
                               }

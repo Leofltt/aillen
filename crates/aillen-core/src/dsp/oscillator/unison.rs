@@ -1,5 +1,5 @@
 use std::f32::consts::PI;
-use crate::dsp::oscillator::Waveform;
+use crate::dsp::oscillator::{poly_blep, Waveform};
 
 /// A reusable Unison Engine stacking multiple detuned and panned oscillators.
 pub struct UnisonEngine {
@@ -51,18 +51,6 @@ impl UnisonEngine {
         }
     }
 
-    /// Helper PolyBLEP step correction for band-limited saw/square waves.
-    fn poly_blep(t: f32, dt: f32) -> f32 {
-        if t < dt {
-            let t = t / dt;
-            t + t - t * t - 1.0
-        } else if t > 1.0 - dt {
-            let t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
-        } else {
-            0.0
-        }
-    }
 
     /// Computes the next stereo sample frame of the unison stack, returning (Left, Right).
     pub fn process_stereo(&mut self) -> (f32, f32) {
@@ -92,7 +80,7 @@ impl UnisonEngine {
                 Waveform::Sine => (t * 2.0 * PI).sin(),
                 Waveform::Saw => {
                     let naive = 2.0 * t - 1.0;
-                    naive - Self::poly_blep(t, dt)
+                    naive - poly_blep(t, dt)
                 }
                 Waveform::Square => {
                     let naive = if t < 0.5 { 1.0 } else { -1.0 };
@@ -100,7 +88,7 @@ impl UnisonEngine {
                     if shifted_t >= 1.0 {
                         shifted_t -= 1.0;
                     }
-                    naive + Self::poly_blep(t, dt) - Self::poly_blep(shifted_t, dt)
+                    naive + poly_blep(t, dt) - poly_blep(shifted_t, dt)
                 }
                 Waveform::Triangle => 1.0 - 4.0 * (t - 0.5).abs(),
             };

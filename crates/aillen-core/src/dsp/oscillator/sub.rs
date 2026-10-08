@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 use crate::dsp::AudioNode;
+use super::polyblep::poly_blep;
 
 /// Waveshapes supported by the SubOscillator.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -7,6 +8,7 @@ pub enum SubWaveform {
     Sine,
     Triangle,
     Square,
+    Saw,
 }
 
 /// A dedicated sub-bass oscillator tuned exactly 1 or 2 octaves below a base frequency.
@@ -47,11 +49,23 @@ impl AudioNode for SubOscillator {
         };
         let sub_freq = self.frequency * mult;
         let dt = sub_freq / self.sample_rate;
+        let t = self.phase;
 
         let sample = match self.waveform {
-            SubWaveform::Sine => (self.phase * 2.0 * PI).sin(),
-            SubWaveform::Triangle => 1.0 - 4.0 * (self.phase - 0.5).abs(),
-            SubWaveform::Square => if self.phase < 0.5 { 1.0 } else { -1.0 },
+            SubWaveform::Sine => (t * 2.0 * PI).sin(),
+            SubWaveform::Triangle => 1.0 - 4.0 * (t - 0.5).abs(),
+            SubWaveform::Square => {
+                let naive = if t < 0.5 { 1.0 } else { -1.0 };
+                let mut shifted_t = t + 0.5;
+                if shifted_t >= 1.0 {
+                    shifted_t -= 1.0;
+                }
+                naive + poly_blep(t, dt) - poly_blep(shifted_t, dt)
+            }
+            SubWaveform::Saw => {
+                let naive = 2.0 * t - 1.0;
+                naive - poly_blep(t, dt)
+            }
         };
 
         self.phase += dt;

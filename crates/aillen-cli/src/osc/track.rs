@@ -2,8 +2,9 @@ use rosc::OscMessage;
 use crossbeam_channel::Sender;
 use crate::audio::AudioMessage;
 use aillen_core::sample_bank::SampleBank;
-use aillen_core::dsp::{oscillator::Waveform, filter::FilterType};
+use aillen_core::dsp::{oscillator::{Waveform, SubWaveform}, filter::FilterType, distortion::DistortionMode};
 use aillen_core::synth::two_op::SynthMode;
+use aillen_core::synth::swave::SwaveMode;
 use aillen_core::synth::sampler::{PlayMode, StretchMode};
 
 fn osc_to_usize(arg: &rosc::OscType) -> Option<usize> {
@@ -283,6 +284,101 @@ pub fn parse_track_command(
             }
         }
 
+        // SWAVE specific OSC commands (Track-addressable or with swave/* prefix)
+        "swave/mode" => {
+            if let Some(arg) = msg.args.get(0) {
+                let mode_idx = arg.clone().int().unwrap_or(0);
+                let mode = match mode_idx {
+                    0 => SwaveMode::Saw,
+                    _ => SwaveMode::Ensemble,
+                };
+                let _ = prod.try_send(AudioMessage::SwaveSetMode { track_id, mode });
+            }
+        }
+        "swave/waveform" => {
+            if let Some(arg) = msg.args.get(0) {
+                let wf_idx = arg.clone().int().unwrap_or(1);
+                let waveform = match wf_idx {
+                    0 => Waveform::Sine,
+                    1 => Waveform::Saw,
+                    2 => Waveform::Square,
+                    3 => Waveform::Triangle,
+                    _ => Waveform::Saw,
+                };
+                let _ = prod.try_send(AudioMessage::SwaveSetBaseWaveform { track_id, waveform });
+            }
+        }
+        "swave/unison" => {
+            if msg.args.len() >= 4 {
+                let detune = msg.args[0].clone().float().unwrap_or(0.025);
+                let level = msg.args[1].clone().float().unwrap_or(0.75);
+                let ext_level = msg.args[2].clone().float().unwrap_or(0.5);
+                let stereo_spread = msg.args[3].clone().float().unwrap_or(0.8);
+                let _ = prod.try_send(AudioMessage::SwaveSetUnison { track_id, detune, level, ext_level, stereo_spread });
+            }
+        }
+        "swave/ensemble" => {
+            if msg.args.len() >= 4 {
+                let interval2 = msg.args[0].clone().float().unwrap_or(4.0);
+                let interval3 = msg.args[1].clone().float().unwrap_or(7.0);
+                let interval4 = msg.args[2].clone().float().unwrap_or(11.0);
+                let level = msg.args[3].clone().float().unwrap_or(0.7);
+                let _ = prod.try_send(AudioMessage::SwaveSetEnsemble { track_id, interval2, interval3, interval4, level });
+            }
+        }
+        "swave/sub" => {
+            if msg.args.len() >= 3 {
+                let wf_idx = msg.args[0].clone().int().unwrap_or(0);
+                let waveform = match wf_idx {
+                    0 => SubWaveform::Square,
+                    1 => SubWaveform::Sine,
+                    2 => SubWaveform::Saw,
+                    3 => SubWaveform::Triangle,
+                    _ => SubWaveform::Square,
+                };
+                let octave = msg.args[1].clone().int().unwrap_or(-1);
+                let gain = msg.args[2].clone().float().unwrap_or(0.4);
+                let _ = prod.try_send(AudioMessage::SwaveSetSubOsc { track_id, waveform, octave, gain });
+            }
+        }
+        "swave/filter" => {
+            if msg.args.len() >= 5 {
+                let base = msg.args[0].clone().float().unwrap_or(20.0);
+                let width = msg.args[1].clone().float().unwrap_or(16000.0);
+                let hp_q = msg.args[2].clone().float().unwrap_or(0.707);
+                let lp_q = msg.args[3].clone().float().unwrap_or(1.2);
+                let env_amount = msg.args[4].clone().float().unwrap_or(4000.0);
+                let _ = prod.try_send(AudioMessage::SwaveSetFilter { track_id, base, width, hp_q, lp_q, env_amount });
+            }
+        }
+        "swave/amp/adsr" => {
+            if msg.args.len() >= 4 {
+                let a = msg.args[0].clone().float().unwrap_or(0.005);
+                let d = msg.args[1].clone().float().unwrap_or(0.2);
+                let s = msg.args[2].clone().float().unwrap_or(0.7);
+                let r = msg.args[3].clone().float().unwrap_or(0.3);
+                let _ = prod.try_send(AudioMessage::SwaveSetAmpAdsr { track_id, a, d, s, r });
+            }
+        }
+        "swave/filter/adsr" => {
+            if msg.args.len() >= 4 {
+                let a = msg.args[0].clone().float().unwrap_or(0.01);
+                let d = msg.args[1].clone().float().unwrap_or(0.3);
+                let s = msg.args[2].clone().float().unwrap_or(0.2);
+                let r = msg.args[3].clone().float().unwrap_or(0.4);
+                let _ = prod.try_send(AudioMessage::SwaveSetFilterAdsr { track_id, a, d, s, r });
+            }
+        }
+        "swave/drive" => {
+            if msg.args.len() >= 3 {
+                let mode_idx = msg.args[0].clone().int().unwrap_or(1);
+                let mode = DistortionMode::from_i32(mode_idx);
+                let gain = msg.args[1].clone().float().unwrap_or(1.5);
+                let mix = msg.args[2].clone().float().unwrap_or(0.3);
+                let _ = prod.try_send(AudioMessage::SwaveSetDrive { track_id, mode, gain, mix });
+            }
+        }
+
         "osc1/waveform" if track_id == 0
  => {
             if let Some(arg) = msg.args.get(0) {
@@ -364,10 +460,40 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::TwoOpSetModulationParams { track_id, index, ratio, detune });
             }
         }
-        "feedback" | "twoop/feedback" if track_id == 0
- => {
+        "feedback" | "twoop/feedback" | "feedback2" | "osc2/feedback" if track_id == 0 => {
             if let Some(feedback) = msg.args.get(0).and_then(|a| a.clone().float()) {
                 let _ = prod.try_send(AudioMessage::TwoOpSetOsc2Feedback { track_id, feedback });
+            }
+        }
+        "feedback1" | "osc1/feedback" | "twoop/feedback1" if track_id == 0 => {
+            if let Some(feedback) = msg.args.get(0).and_then(|a| a.clone().float()) {
+                let _ = prod.try_send(AudioMessage::TwoOpSetOsc1Feedback { track_id, feedback });
+            }
+        }
+        "ratio/quantize" | "twoop/ratio/quantize" if track_id == 0 => {
+            if msg.args.len() >= 2 {
+                let enabled = match msg.args[0] {
+                    rosc::OscType::Bool(b) => b,
+                    rosc::OscType::Int(i) => i > 0,
+                    rosc::OscType::Float(f) => f > 0.5,
+                    _ => false,
+                };
+                let ratio_index = msg.args[1].clone().int().unwrap_or(4).max(0) as usize;
+                let _ = prod.try_send(AudioMessage::TwoOpSetRatioQuantize { track_id, enabled, ratio_index });
+            }
+        }
+        "filter/basewidth" | "twoop/filter/basewidth" if track_id == 0 => {
+            if msg.args.len() >= 4 {
+                let enabled = match msg.args[0] {
+                    rosc::OscType::Bool(b) => b,
+                    rosc::OscType::Int(i) => i > 0,
+                    rosc::OscType::Float(f) => f > 0.5,
+                    _ => false,
+                };
+                let base = msg.args[1].clone().float().unwrap_or(20.0);
+                let width = msg.args[2].clone().float().unwrap_or(20000.0);
+                let hp_q = msg.args[3].clone().float().unwrap_or(0.707);
+                let _ = prod.try_send(AudioMessage::TwoOpSetBaseWidthFilter { track_id, enabled, base, width, hp_q });
             }
         }
         "wavefold" | "twoop/wavefold" if track_id == 0

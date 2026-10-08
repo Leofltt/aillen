@@ -35,18 +35,19 @@ impl PolyBlepOscillator {
     pub fn set_waveform(&mut self, waveform: Waveform) {
         self.waveform = waveform;
     }
-    
-    /// Calculates the PolyBLEP step correction factor.
-    fn poly_blep(t: f32, dt: f32) -> f32 {
-        if t < dt {
-            let t = t / dt;
-            t + t - t * t - 1.0
-        } else if t > 1.0 - dt {
-            let t = (t - 1.0) / dt;
-            t * t + t + t + 1.0
-        } else {
-            0.0
-        }
+}
+
+/// Calculates the PolyBLEP step correction factor to suppress aliasing around discontinuities.
+#[inline]
+pub fn poly_blep(t: f32, dt: f32) -> f32 {
+    if t < dt {
+        let t = t / dt;
+        t + t - t * t - 1.0
+    } else if t > 1.0 - dt {
+        let t = (t - 1.0) / dt;
+        t * t + t + t + 1.0
+    } else {
+        0.0
     }
 }
 
@@ -62,7 +63,7 @@ impl AudioNode for PolyBlepOscillator {
             }
             Waveform::Saw => {
                 let naive = 2.0 * t - 1.0;
-                naive - Self::poly_blep(t, dt)
+                naive - poly_blep(t, dt)
             }
             Waveform::Square => {
                 let naive = if t < 0.5 { 1.0 } else { -1.0 };
@@ -70,7 +71,7 @@ impl AudioNode for PolyBlepOscillator {
                 if shifted_t >= 1.0 {
                     shifted_t -= 1.0;
                 }
-                naive + Self::poly_blep(t, dt) - Self::poly_blep(shifted_t, dt)
+                naive + poly_blep(t, dt) - poly_blep(shifted_t, dt)
             }
             Waveform::Triangle => {
                 1.0 - 4.0 * (t - 0.5).abs()

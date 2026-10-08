@@ -6,7 +6,7 @@ Opinionated, feature-incomplete audio engine, DSP library, and live synthesizers
 
 This project is set up as a Cargo Workspace containing:
 
-- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including Biquad, DJ performance, Formant, and Comb filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), wavefolding saturators, bitcrushing degraders, a stereo delay (Tape and Granular modes), an Elektron-style stereo reverb, a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, a 303 bass synth, a rave hubass synth, and a sample bank).
+- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including Biquad, DJ performance, Formant, Comb, and Elektron Base & Width serial filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), wavefolding saturators, bitcrushing degraders, a stereo delay (Tape and Granular modes), an Elektron-style stereo reverb, a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, a 303 bass synth, a rave hubass synth, a modal resonator synth, a Monomachine-inspired SuperWave synth, and a sample bank).
 - `aillen-cli`: A standalone performance synthesizer that wraps `aillen-core` with real-time stereo audio (`cpal`) and an asynchronous UDP OSC server mapped via lock-free channels (`crossbeam-channel`).
 
 ---
@@ -176,7 +176,7 @@ The CLI launches an interactive ASCII Terminal User Interface (TUI) designed for
 
 ## 2. Audio Mixer & Instrument Tracks
 
-The engine supports a stereo Mixer with 8 instrument tracks and one delay return track:
+The engine supports a stereo Mixer with 9 instrument tracks and one delay return track:
 
 - **Track 0**: `TwoOp` (FM Synth)
 - **Track 1**: `Sampler` (Sample playback engine with multi-format support via Symphonia)
@@ -186,6 +186,7 @@ The engine supports a stereo Mixer with 8 instrument tracks and one delay return
 - **Track 5**: `Sampler`
 - **Track 6**: `Synth303` (Roland 303-like monophonic/legato bass synth)
 - **Track 7**: `SynthHubass` (Versatile Rave & Bass Synthesizer with detuned unison, filter-bypassed sub-bass, multi-mode filters, drive, LFO, and stereo chorus)
+- **Track 8**: `SwaveSynth` (Monomachine SuperWave 5-saw detuned cluster & 4-voice chord ensemble synth)
 - **Return Track (Delay)**: A stereo delay return track (100% wet by default).
 - **Return Track (Reverb)**: A stereo reverb return track (100% wet by default).
 
@@ -209,7 +210,7 @@ All OSC messages must target the appropriate track path (`/track/<id>/`) or mixe
 | `/track/<id>/mute` | `i`/`b` | `i32` / `bool` | `0` (false) | Mute (`1` / `true`) or unmute (`0` / `false`) the track. |
 | `/track/<id>/send/delay` | `f` | `f32` | `0.0` | Send level to the delay return track. Range: `0.0` (dry) to `1.0` (maximum send). |
 | `/track/<id>/send/reverb` | `f` | `f32` | `0.0` | Send level to the reverb return track. Range: `0.0` (dry) to `1.0` (maximum send). |
-| `/track/<id>/sidechain/source` | `i` | `i32` | `-1` | Set sidechain source track index. Range: `0` to `7`. Negative value (e.g., `-1`) disables it. |
+| `/track/<id>/sidechain/source` | `i` | `i32` | `-1` | Set sidechain source track index. Range: `0` to `8`. Negative value (e.g., `-1`) disables it. |
 
 ### Mixer Return Delay Controls
 
@@ -271,7 +272,7 @@ Each track features an independent effects chain that can be modulated in real-t
 | :--- | :--- | :--- | :--- |
 | `/track/<id>/note/on` | `ff` | `[f32, f32]` | `[freq, velocity]` Triggers a note. Frequency range: `20.0` to `20000.0` Hz. Velocity range: `0.0` to `1.0`. |
 | `/track/<id>/note/off` | `f` | `[f32]` | `[freq]` Releases a specific frequency, or all notes if no argument is provided. |
-| `/track/<id>/note` | `fff` | `[f32, f32, f32]` | `[freq, duration_ms, velocity]` Plays a timed note (Track 0, 4, 6, and 7 only). Duration range: `1.0` to `10000.0` ms. |
+| `/track/<id>/note` | `fff` | `[f32, f32, f32]` | `[freq, duration_ms, velocity]` Plays a timed note (Track 0, 4, 6, 7, and 8 only). Duration range: `1.0` to `10000.0` ms. |
 
 ---
 
@@ -465,6 +466,16 @@ A versatile attack-decay-sustain-release envelope generator supporting both clea
   - `release`: `f32` (seconds).
   - `curve`: `EnvelopeCurve` (`Linear` or `Exponential`).
 
+### 19. Base & Width Filter (`aillen_core::dsp::filter::BaseWidthFilter`)
+
+An Elektron Monomachine-inspired serial dual filter consisting of a High-Pass filter cascaded into a Low-Pass filter. The Low-Pass cutoff frequency tracks the High-Pass cutoff via the formula `LP_cutoff = Base + Width`. Modulating or sweeping `base` shifts both cutoffs simultaneously across the spectrum while preserving bandwidth.
+
+- **Parameters**:
+  - `base`: `f32` (High-Pass cutoff frequency in Hz). Default: `20.0`. Range: `10.0` to `20000.0`.
+  - `width`: `f32` (Bandwidth span added to base for Low-Pass cutoff in Hz). Default: `20000.0`. Range: `10.0` to `20000.0`.
+  - `hp_q`: `f32` (High-Pass resonance Q). Default: `0.707`. Range: `0.1` to `10.0`.
+  - `lp_q`: `f32` (Low-Pass resonance Q). Default: `0.707`. Range: `0.1` to `10.0`.
+
 ---
 
 ## 4. Instrument-Specific Settings
@@ -484,7 +495,10 @@ A versatile attack-decay-sustain-release envelope generator supporting both clea
 | `/track/<id>/filter/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.05, 0.3, 0.2, 0.5]` | Filter Cutoff modulation envelope parameters `[A, D, S, R]`. A/D/R (seconds): `0.001` to `10.0`. S (level): `0.0` to `1.0`. |
 | `/track/<id>/filter/params` | `ffi` | `[f32, f32, i32]` | `[1000.0, 0.707, 0]` | Filter parameters `[cutoff, Q, type]`. Cutoff: `20.0` to `20000.0` Hz. Q (resonance): `0.1` to `10.0+`. Type: `0` = LP, `1` = HP, `2` = BP, `3` = Notch. |
 | `/track/<id>/filter/mod` | `bf` | `[bool, f32]` | `[true, 5000.0]` | Cutoff modulation parameters `[enabled, amount]`. Amount (envelope depth): `-20000.0` to `20000.0` Hz. |
-| `/track/<id>/feedback`<br>_or_ `/track/<id>/twoop/feedback` | `f` | `f32` | `0.0` | Modulator phase self-feedback intensity. Range: `0.0` to `1.0` (morphs sine to saw/noise). |
+| `/track/<id>/feedback`<br>_or_ `/track/<id>/twoop/feedback` | `f` | `f32` | `0.0` | Modulator (Operator 2) phase self-feedback intensity. Range: `0.0` to `1.0` (morphs sine to saw/noise). |
+| `/track/<id>/feedback1`<br>_or_ `/track/<id>/twoop/feedback1` | `f` | `f32` | `0.0` | Carrier (Operator 1) phase self-feedback intensity. Range: `0.0` to `1.0`. |
+| `/track/<id>/ratio/quantize`<br>_or_ `/track/<id>/twoop/ratio/quantize` | `bi` | `[bool, i32]` | `[false, 4]` | Monomachine FM+STATIC style quantized harmonic ratio mode `[enabled, ratio_index]`. Indices `0..16`: `1/8, 1/4, 1/2, 3/4, 1, 5/4, 3/2, 2, 5/2, 3, 7/2, 4, 5, 6, 7, 8, 12`. |
+| `/track/<id>/filter/basewidth`<br>_or_ `/track/<id>/twoop/filter/basewidth` | `bfff` | `[bool, f32, f32, f32]` | `[false, 20.0, 20000.0, 0.707]` | Monomachine-inspired serial Base & Width dual HP/LP filter `[enabled, base_hz, width_hz, hp_q]`. Sweeping Base moves both HP and LP together. |
 | `/track/<id>/wavefold`<br>_or_ `/track/<id>/twoop/wavefold` | `ff` | `[f32, f32]` | `[1.0, 0.0]` | Modulator wavefolder configuration `[gain, mix]`. Gain: `1.0` to `10.0`. Mix (dry/wet): `0.0` to `1.0`. |
 | `/track/<id>/noise`<br>_or_ `/track/<id>/twoop/noise` | `ff` | `[f32, f32]` | `[0.0, 0.0]` | Phase noise injection levels `[carrier_noise, modulator_noise]`. Range: `0.0` to `1.0`. |
 | `/track/<id>/pitch/sweep`<br>_or_ `/track/<id>/twoop/pitch/sweep` | `ff` | `[f32, f32]` | `[0.0, 0.1]` | Pitch sweep range and decay `[depth_semitones, decay_sec]`. Depth: `-48.0` to `48.0` semitones. Decay: `0.001` to `5.0` seconds. |
@@ -560,6 +574,22 @@ A massive, versatile synthesizer designed for heavy basslines and rave textures.
 | `/track/7/hubass/chorus/params` | `ff` | `[f32, f32]` | `[0.5, 0.5]` | Stereo chorus parameters `[mix, depth]`. Mix: `0.0` (dry) to `1.0` (wet). Depth: `0.0` to `1.0`. |
 | `/track/7/hubass/legato` | `i`/`b` | `i32` / `bool` | `1` (true) | Legato slide toggle. `0` = Off, `1` = On. |
 | `/track/7/hubass/gain` | `f` | `f32` | `1.0` | Output channel gain volume multiplier. Range: `0.0` to `5.0`. |
+
+### Track 8: SWAVE Synth (Monomachine SuperWave & Ensemble Engine)
+
+Inspired by the Elektron Monomachine SuperWave architecture (`SWAVE-SAW` and `SWAVE-ENS`), featuring a 5-oscillator PolyBLEP anti-aliased detuned saw cluster with configurable inner & outer unison pairs, a dedicated sub-oscillator, chord ensemble interval modes, Monomachine Base & Width dual HP/LP serial filtering, and integrated saturation drive.
+
+| Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `/track/<id>/swave/mode` | `i` | `i32` | `0` | Synthesis Mode. `0` = SuperWave Saw (5-saw cluster + sub), `1` = SuperWave Ensemble (4-voice chord / intervals + sub). |
+| `/track/<id>/swave/waveform` | `i` | `i32` | `1` (Saw) | Base oscillator waveform. `0` = Sine, `1` = Saw, `2` = Square, `3` = Triangle. |
+| `/track/<id>/swave/unison` | `ffff` | `[f32, f32, f32, f32]` | `[0.025, 0.75, 0.5, 0.8]` | Unison stack parameters `[detune, inner_level, outer_level, stereo_spread]`. Detune: `0.0` to `0.1`. Inner level (UNID): `0.0` to `1.0`. Outer level (UNIX): `0.0` to `1.0`. Stereo spread: `0.0` (mono) to `1.0` (wide stereo). |
+| `/track/<id>/swave/ensemble` | `ffff` | `[f32, f32, f32, f32]` | `[4.0, 7.0, 11.0, 0.7]` | Ensemble mode chord voicings `[semitone2, semitone3, semitone4, level]`. Offsets relative to root note (e.g. `[3.0, 7.0, 10.0]` for minor 7th). |
+| `/track/<id>/swave/sub` | `iif` | `[i32, i32, f32]` | `[0, -1, 0.4]` | Sub-oscillator config `[waveform, octave, gain]`. Waveform: `0` = Square, `1` = Sine, `2` = Saw, `3` = Triangle. Octave offset: `-1` or `-2`. Gain (SUBD): `0.0` to `1.0`. |
+| `/track/<id>/swave/filter` | `fffff` | `[f32, f32, f32, f32, f32]` | `[20.0, 16000.0, 0.707, 1.2, 4000.0]` | Monomachine Base & Width filter `[base_hz, width_hz, hp_q, lp_q, env_amount]`. Base: `10.0` to `20000.0` Hz. Width: `10.0` to `20000.0` Hz. |
+| `/track/<id>/swave/amp/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.005, 0.2, 0.7, 0.3]` | Amplitude ADSR envelope parameters `[A, D, S, R]`. A/D/R (seconds): `0.001` to `10.0`. S (level): `0.0` to `1.0`. |
+| `/track/<id>/swave/filter/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.01, 0.3, 0.2, 0.4]` | Filter Cutoff modulation ADSR envelope `[A, D, S, R]`. |
+| `/track/<id>/swave/drive` | `iff` | `[i32, f32, f32]` | `[1, 1.5, 0.3]` | Saturation drive config `[mode, gain, mix]`. Mode: `0` = Bypass, `1` = Tanh, `2` = HardClip, `3` = Foldback. Gain: `1.0` to `10.0`. Mix: `0.0` to `1.0`. |
 
 ---
 

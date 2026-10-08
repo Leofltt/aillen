@@ -83,10 +83,11 @@ impl Track {
 }
 
 use crate::synth::resonator::resonator::SynthResonator;
+use crate::synth::swave::swave::SwaveSynth;
 
 use crate::dsp::filter::biquad::{BiquadFilter, FilterType};
 
-pub const MAX_TRACKS: usize = 8;
+pub const MAX_TRACKS: usize = 9;
 
 /// The stereo master audio mixer containing all tracks, return tracks, and master volume controls.
 pub struct Mixer {
@@ -128,6 +129,7 @@ impl Mixer {
         let mut sampler_track4 = Track::new(Box::new(Sampler::new(sample_rate, num_voices)), sample_rate);
         let mut synth303_track = Track::new(Box::new(Synth303::new(sample_rate, 1)), sample_rate);
         let mut hubass_track = Track::new(Box::new(SynthHubass::new(sample_rate, 1)), sample_rate);
+        let mut swave_track = Track::new(Box::new(SwaveSynth::new(sample_rate, num_voices)), sample_rate);
         
         // Default cross-sidechaining configuration
         synth_track.sidechain_source = None;
@@ -138,6 +140,7 @@ impl Mixer {
         sampler_track4.sidechain_source = None;
         synth303_track.sidechain_source = None;
         hubass_track.sidechain_source = None;
+        swave_track.sidechain_source = None;
         
 
         let mut return_delay = StereoDelay::new(sample_rate);
@@ -148,7 +151,7 @@ impl Mixer {
         let return_reverb_hp_r = BiquadFilter::new(sample_rate, 120.0, 0.707, FilterType::HighPass);
 
         Self {
-            tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, resonator_track, sampler_track4, synth303_track, hubass_track],
+            tracks: vec![synth_track, sampler_track, sampler_track2, sampler_track3, resonator_track, sampler_track4, synth303_track, hubass_track, swave_track],
             master_volume: 1.0,
 
             master_filter_l: DjFilter::new(sample_rate),

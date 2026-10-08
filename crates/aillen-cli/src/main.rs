@@ -50,8 +50,8 @@ fn main() -> anyhow::Result<()> {
         }
     }
     
-    // 8 tracks: Track 0 (TwoOp), Track 1-3 (Sampler), Track 4 (TwoOp), Track 5 (Sampler), Track 6 (Synth303), Track 7 (Hubass)
-    let num_tracks = 8;
+    // 9 tracks: Track 0 (TwoOp), Track 1-3 (Sampler), Track 4 (SynthResonator), Track 5 (Sampler), Track 6 (Synth303), Track 7 (Hubass), Track 8 (Swave)
+    let num_tracks = 9;
     let ui_handle = UiHandle::new(num_tracks);
 
     // Start UI thread

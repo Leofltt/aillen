@@ -8,9 +8,12 @@ pub mod ladder;
 pub mod formant;
 /// Comb filter implementation.
 pub mod comb;
+/// Monomachine-inspired Base & Width serial high-pass/low-pass filter.
+pub mod base_width;
 
 pub use biquad::{BiquadFilter, FilterType};
 pub use dj::DjFilter;
 pub use ladder::ResonantLadderFilter;
 pub use formant::FormantFilter;
 pub use comb::CombFilter;
+pub use base_width::BaseWidthFilter;

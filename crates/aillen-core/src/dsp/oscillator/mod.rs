@@ -9,7 +9,7 @@ pub mod unison;
 
 // Import types for public re-export
 pub use naive::NaiveOscillator;
-pub use polyblep::PolyBlepOscillator;
+pub use polyblep::{PolyBlepOscillator, poly_blep};
 pub use sub::{SubOscillator, SubWaveform};
 pub use unison::UnisonEngine;
 

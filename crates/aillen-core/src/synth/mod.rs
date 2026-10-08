@@ -8,6 +8,8 @@ pub mod synth303;
 pub mod hubass;
 /// Circuit-Bent Karplus-Strong Resonator synthesizer module.
 pub mod resonator;
+/// SuperWave / Ensemble synthesizer module (inspired by Elektron Monomachine SWAVE).
+pub mod swave;
 
 
 use crate::dsp::AudioNode;

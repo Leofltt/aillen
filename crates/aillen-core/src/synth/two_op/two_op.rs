@@ -111,9 +111,31 @@ impl TwoOpSynth {
         self.update_voices();
     }
 
-    /// Sets self-feedback of Operator 2.
+    /// Sets self-feedback of Operator 2 (Modulator).
     pub fn set_osc2_feedback(&mut self, feedback: f32) {
         self.master_patch.osc2_feedback = feedback;
+        self.update_voices();
+    }
+
+    /// Sets self-feedback of Operator 1 (Carrier).
+    pub fn set_osc1_feedback(&mut self, feedback: f32) {
+        self.master_patch.osc1_feedback = feedback;
+        self.update_voices();
+    }
+
+    /// Sets static ratio quantization mode (Monomachine FM+STATIC style).
+    pub fn set_ratio_quantize(&mut self, enabled: bool, ratio_index: usize) {
+        self.master_patch.ratio_quantize = enabled;
+        self.master_patch.ratio_index = ratio_index;
+        self.update_voices();
+    }
+
+    /// Configures Monomachine-inspired Base & Width filter mode.
+    pub fn set_base_width_filter(&mut self, enabled: bool, base: f32, width: f32, hp_q: f32) {
+        self.master_patch.base_width_enabled = enabled;
+        self.master_patch.filter_base = base;
+        self.master_patch.filter_width = width;
+        self.master_patch.filter_hp_q = hp_q;
         self.update_voices();
     }
 
