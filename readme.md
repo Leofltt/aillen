@@ -168,7 +168,7 @@ The CLI launches an interactive ASCII Terminal User Interface (TUI) designed for
 - **Layout Grid**:
   - **Top (Rows 0-30)**: Displays active track waveforms (up to 4 track slots in a 2x2 grid) with vertical left/right channel oscilloscope scopes and real-time track OSC command logs.
   - **Bottom-Left (Rows 31-42)**: Displays the master output volume horizontal oscilloscope scope and master-level OSC logs.
-  - **Bottom-Right (Rows 31-42)**: Plots a real-time **L x R XY Vectorscope** displaying phase correlation, stereo field width, and alignment.
+  - **Bottom-Right (Rows 31-42)**: Plots a real-time **45° Goniometer / Stereo Vectorscope** ($Y = \text{Mid} = L + R$, $X = \text{Side} = L - R$) displaying phase correlation, stereo field width, and alignment.
 - **LRU Dynamic Display**: Out of the 8 available tracks, only the 4 most recently active tracks (based on audio activity or incoming OSC messages) are displayed. When a track goes inactive for 15 seconds, it is swapped out for a more recently active track.
 - **Sticky Slots**: Tracks remember their last preferred slot index (`preferred_slot`) to prevent disorienting jumps when tracks are dynamic swapped.
 
@@ -482,6 +482,57 @@ An Elektron Monomachine-inspired serial dual filter consisting of a High-Pass fi
 
 ### Track 0: TwoOp Synth
 
+```
+  Pitch Sweep Env ----+
+  Pitch LFO ----------+---> Base Pitch (Hz)
+                             |
+         +-------------------+--------------------+
+         |                                        |
+         v (x Ratio + Detune)                     v
+  +--------------------------------+      +--------------------------------+
+  | Operator 2 (Modulator)         |      | Operator 1 (Carrier)           |
+  |  - Waveform (Sine/Saw/Sq/Tri)  |      |  - Waveform (Sine/Saw/Sq/Tri)  |
+  |  - Self Feedback (osc2_fb)     |      |  - Self Feedback (osc1_fb)     |
+  |  - Modulator Phase Noise       |      |  - Carrier Phase Noise         |
+  +--------------------------------+      +--------------------------------+
+                 |                                       |
+                 v                                       |
+        [x Op2 ADSR Env]                                 |
+                 |                                       |
+                 v                                       |
+      +--------------------+                             |
+      | Wavefolder         |                             |
+      | (Diode Reflection) |                             |
+      +--------------------+                             |
+                 |                                       |
+                 v                                       |
+        [x Mod Index (LFO)]                              |
+                 |                                       |
+                 +-------------------+                   |
+                                     |                   |
+                                     v                   v
+                        +---------------------------------------+
+                        | Synthesis Mode Interaction:           |
+                        |  - 0: Additive: (Op1*Env1 + Op2)/2    |
+                        |  - 1: AM:       Op1 * (1 + Op2) * Env1|
+                        |  - 2: RM:       Op1 * Op2 * Env1      |
+                        |  - 3: FM (PM):  Op1(Phase + Op2)*Env1 |
+                        +---------------------------------------+
+                                            |
+                                            v
+                        +---------------------------------------+
+                        | Filter Stage (Selected via Switch):   |
+                        |  Mode A: Standard Biquad Filter       |
+                        |          (LP, HP, BP, Notch)          |
+                        |  Mode B: Monomachine Base & Width     |
+                        |          (Serial Dual HP -> LP)       |
+                        |  Modulation: Filter ADSR + Cutoff LFO |
+                        +---------------------------------------+
+                                            |
+                                            v
+                                 Output -> Track FxChain
+```
+
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `/track/<id>/realtime` | `i` | `i32` | `0` | Monotimbral mode toggle. `0` = Polytimbral (default), `1` = Monotimbral. |
@@ -508,6 +559,37 @@ An Elektron Monomachine-inspired serial dual filter consisting of a High-Pass fi
 
 Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 
+```
+  +---------------------------------------------------------------------------------+
+  |                             Audio Sample Buffer                                 |
+  +---------------------------------------------------------------------------------+
+                                           |
+                                           v
+  +---------------------------------------------------------------------------------+
+  | Playback Engine:                                                                |
+  |  - Mode: OneShot / Loop                                                         |
+  |  - Time-Stretch: Resample (pitch+speed coupled) OR Granular Time-Stretch       |
+  |    [Granular: grain_size_ms (10..150ms), overlap count (2..8)]                  |
+  |  - Slice Engine: num_slices (2..64), selected_slice (0..N-1), stutter_count     |
+  +---------------------------------------------------------------------------------+
+                                           |
+                                    Polyphonic Sum
+                                           |
+                                           v
+                              +-------------------------+
+                              | Headroom Gain Normalizer|
+                              +-------------------------+
+                                           |
+                                           v
+                              +-------------------------+
+                              | Stereo DJ Filter (L/R)  |
+                              | (-1.0 LP <-> +1.0 HP)   |
+                              +-------------------------+
+                                           |
+                                           v
+                                   Stereo Output -> Track FxChain
+```
+
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `/track/<id>/sample/load` | `s` | `string` | - | Absolute or relative path to load an audio file from disk in real-time. |
@@ -528,6 +610,73 @@ Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 
 A physical modeling string and modal synthesizer with a noise exciter, fractional delay line, parallel modal resonator, and internal circuit-bent wavefolding/bitcrushing distortion inside the feedback loop.
 
+```
+  +-------------------------------------------------------+
+  | Noise Generator PRNG                                  |
+  +-------------------------------------------------------+
+                             |
+                             v
+              +-----------------------------+
+              | Exciter LowPass Filter      | <--- exciter_cutoff (Hz)
+              +-----------------------------+
+                             |
+                             v
+                   [x Exciter ADSR Env]
+                             |
+                   Exciter Impulse Burst
+                             |
+                             v
+           +-----------------+-----------------------+
+           |                                         |
+           v                                         |
+  +-----------------------------+                    |
+  | Karplus-Strong Delay Line   | <--- Pitch Hz      |
+  | (Fractional Linear Interp)  |                    |
+  +-----------------------------+                    |
+                 |                                   |
+                 v                                   |
+  +-----------------------------+                    |
+  | Wavefolder (bend_drive/fold)|                    |
+  +-----------------------------+                    |
+                 |                                   |
+                 v                                   |
+  +-----------------------------+                    |
+  | Bitcrusher (bend_bits)      |                    |
+  +-----------------------------+                    |
+                 |                                   |
+                 v                                   |
+  +-----------------------------+                    |
+  | Loop Dampening LowPass      | <--- dampening (Hz)|
+  +-----------------------------+                    |
+                 |                                   |
+                 v                                   |
+        [x Feedback Gain]                            |
+                 |                                   |
+                 v                                   |
+            ( + Sum ) <------------------------------+
+                 |
+                 v
+        [Soft Clip Tanh()]
+                 |
+                 +-------------------+ (Loop Feedback to Delay Line)
+                 |
+                 +-----------------------------------+
+                 |                                   |
+                 v                                   v
+        (1.0 - modal_mix)                     [modal_mix]
+                 |                                   |
+                 |                                   v
+                 |                    +-------------------------------+
+                 |                    | Parallel Modal Resonator      |
+                 |                    | (BPF at Pitch * modal_ratio)  |
+                 |                    +-------------------------------+
+                 |                                   |
+                 +-----------------+-----------------+
+                                   |
+                                   v
+                        Output -> Track FxChain
+```
+
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `/track/4/exciter/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.001, 0.03, 0.0, 0.01]` | Exciter noise burst ADSR parameters `[A, D, S, R]`. A/D/R (seconds): `0.001` to `10.0`. S (level): `0.0` to `1.0`. |
@@ -543,6 +692,44 @@ A physical modeling string and modal synthesizer with a noise exciter, fractiona
 ### Track 6: Synth303 (Acid Bass Synth)
 
 A monophonic, legato-enabled synthesizer mimicking the Roland TB-303. Features band-limited PolyBLEP oscillators (Saw/Square/PWM), exponential analog RC envelopes, and authentic velocity-sensitive accent dynamics (triggering at velocity > 0.7 to boost cutoff envelope, resonance, output volume, and non-linear liquid saturation).
+
+```
+  Pitch Envelope (Exponential RC) ----+
+  Portamento Glide (glide_time) ------+---> Final Oscillator Pitch (Hz)
+                                            |
+                         +------------------+
+                         |
+                         v
+  +-------------------------------------------------------+
+  | Band-Limited PolyBLEP Oscillator                      |
+  |  - Waveform: Saw / Square / Sine / Tri               |
+  |  - PWM: Pulse-Width LFO (pwm_rate, pwm_depth)         |
+  +-------------------------------------------------------+
+                             |
+                             v
+  +-------------------------------------------------------+
+  | 4-Pole 24dB Resonant Diode/Ladder Filter (ZDF)        |
+  |  - Cutoff: base_cutoff + (filter_env * depth)         |
+  |    + [Accent Boost: +2500 Hz * filter_env]            |
+  |  - Resonance: base_res + [Accent Boost: +0.15]        |
+  +-------------------------------------------------------+
+                             |
+                             v
+  +-------------------------------------------------------+
+  | Amplitude Stage (Exponential RC Amp ADSR)             |
+  |  - Signal * amp_env * [Accent Gain: 1.0 + acc*0.35]   |
+  +-------------------------------------------------------+
+                             |
+                             v
+  +-------------------------------------------------------+
+  | Asymmetric Liquid Saturation                          |
+  |  - Drive = Signal * (3.5 + accent * 1.5)              |
+  |  - Non-linear Warm Shaping: tanh(drive) * 0.85        |
+  +-------------------------------------------------------+
+                             |
+                             v
+                   Output -> Track FxChain
+```
 
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -561,6 +748,62 @@ A monophonic, legato-enabled synthesizer mimicking the Roland TB-303. Features b
 
 A massive, versatile synthesizer designed for heavy basslines and rave textures. It features a configurable detuned unison generator, a dedicated filter-bypassed sub oscillator, parallel stereo multi-mode filters (ZDF Ladder, ZDF Biquad, and Formant vowel filter), modular LFO modulation, waveshaping saturation/drive, and a stereo chorus unit.
 
+```
+  Portamento Glide (0.05s) ---+
+  LFO 1 Pitch Mod ------------+---> Oscillator Pitch (Hz)
+                                          |
+         +--------------------------------+--------------------------------+
+         |                                                                 |
+         v                                                                 v
+  +--------------------------------+                             +--------------------+
+  | Stereo Unison Engine           |                             | Mono Sub-Oscillator|
+  |  - Voices (1..7)               |                             |  - Waveform (0..2) |
+  |  - Detune (0.0..0.2)           |                             |  - Octave (-1 / -2)|
+  |  - Stereo Spread (0.0..1.0)    |                             |  - Gain (0.0..2.0) |
+  |  - Waveform (Saw/Square/Tri)   |                             +--------------------+
+  +--------------------------------+                                       |
+          | L            | R                                               |
+          v              v                                                 |
+       ( + )          ( + ) <--- White Noise Generator                     |
+         |              |                                                  |
+         +-------+------+                                                  |
+                 |                                                         |
+                 v Stereo                                                  |
+  +-------------------------------------------------------+                |
+  | Multi-Mode Stereo Filter:                             |                |
+  |  - Mode 0: ZDF Ladder LowPass (24 dB)                 |                |
+  |  - Mode 1: ZDF Ladder BandPass                        |                |
+  |  - Mode 2: Formant Vowel Morph Filter                 |                |
+  |  - Modulation: Filter Cutoff Decay Env + LFO 1 Cutoff |                |
+  +-------------------------------------------------------+                |
+                 | Stereo                                                  |
+                 v                                                         |
+  +-------------------------------------------------------+                |
+  | Stereo Drive / Saturation:                            |                |
+  |  - Mode: Bypass / Tanh / HardClip / Wavefold          |                |
+  |  - Drive Gain (0.0..10.0), Mix (0.0..1.0)             |                |
+  +-------------------------------------------------------+                |
+                 | Stereo                                                  |
+                 v                                                         |
+       [x Amp ADSR Envelope]                                               |
+       [x Master Output Gain]                                              |
+                 |                                                         |
+                 v Mid/High Stereo                                         |
+  +-------------------------------------------------------+                |
+  | Stereo Chorus Delay:                                  |                |
+  |  - Variable Delay Lines L & R with Jitter LFOs        |                |
+  |  - Chorus Mix & Modulation Depth                      |                |
+  +-------------------------------------------------------+                |
+                 | L            | R                                        |
+                 v              v                                          |
+              ( + )          ( + ) <---------------------------------------+ (Clean Sub Sum)
+                 |              |
+                 +-------+------+
+                         |
+                         v
+               Stereo Output -> Track FxChain
+```
+
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `/track/7/hubass/amp/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.05, 0.2, 0.7, 0.3]` | Amplitude ADSR envelope parameters `[A, D, S, R]`. A/D/R (seconds): `0.001` to `10.0`. S (level): `0.0` to `1.0`. |
@@ -578,6 +821,62 @@ A massive, versatile synthesizer designed for heavy basslines and rave textures.
 ### Track 8: SWAVE Synth (Monomachine SuperWave & Ensemble Engine)
 
 Inspired by the Elektron Monomachine SuperWave architecture (`SWAVE-SAW` and `SWAVE-ENS`), featuring a 5-oscillator PolyBLEP anti-aliased detuned saw cluster with configurable inner & outer unison pairs, a dedicated sub-oscillator, chord ensemble interval modes, Monomachine Base & Width dual HP/LP serial filtering, and integrated saturation drive.
+
+```
+  Fundamental Note Frequency (Hz)
+                  |
+         +--------+-------------------------------------------------+
+         |                                                          |
+         | Mode 0: SWAVE-SAW (5-Saw Cluster)                        | Mode 1: SWAVE-ENS (Ensemble Chords)
+         v                                                          v
+  +---------------------------------------+              +---------------------------------------+
+  | Osc 0: Center Base Freq (Pan: Center) |              | Osc 0: Root Pitch (Pan: Center)       |
+  | Osc 1: +1x Detune UNID (Pan: -0.5*Spr)|              | Osc 1: Root + Interval 1 (Pan: -0.8)  |
+  | Osc 2: -1x Detune UNID (Pan: +0.5*Spr)|              | Osc 2: Root + Interval 2 (Pan: +0.8)  |
+  | Osc 3: +2x Detune UNIX (Pan: -1.0*Spr)|              | Osc 3: Root + Interval 3 (Pan: Center)|
+  | Osc 4: -2x Detune UNIX (Pan: +1.0*Spr)|              | (PolyBLEP Oscillators)                |
+  +---------------------------------------+              +---------------------------------------+
+                     | L           | R                                      | L           | R
+                     +------+------+                                        +------+------+
+                            |                                                      |
+                            +--------------------------+---------------------------+
+                                                       |
+                                                       v Stereo
+                                   +---------------------------------------+
+                                   | Stereo Oscillator Cluster Sum         |
+                                   +---------------------------------------+
+                                           | L                   | R
+                                           v                     v
+                                        ( + )                 ( + )
+                                           ^                     ^
+                                           |                     |
+                                   +---------------------------------------+
+                                   | Sub-Oscillator (Square/Sine/Saw/Tri)  |
+                                   | - Octave: -1 or -2, Level: SUBD       |
+                                   | - Solid Center Mono Punch (both L & R)|
+                                   +---------------------------------------+
+                                                       |
+                                                       v Stereo
+                                            [x Amp ADSR Envelope]
+                                                       |
+                                                       v Stereo
+                                   +---------------------------------------+
+                                   | Monomachine Base & Width Filter:      |
+                                   |  - High-Pass Filter (Base Hz)         |
+                                   |  - Low-Pass Filter (Base + Width Hz)  |
+                                   |  - Modulation: Filter ADSR onto Base  |
+                                   +---------------------------------------+
+                                                       |
+                                                       v Stereo
+                                   +---------------------------------------+
+                                   | Stereo Saturation Drive:              |
+                                   |  - Mode: Bypass/Tanh/HardClip/Wavefold|
+                                   |  - Gain (1..10x), Mix (0.0..1.0)      |
+                                   +---------------------------------------+
+                                                       |
+                                                       v
+                                            Stereo Output -> Track FxChain
+```
 
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |

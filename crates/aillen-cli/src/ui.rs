@@ -341,9 +341,9 @@ pub struct UiHandle {
     // Tracks L & R maximum absolute peaks
     track_peaks_l: Arc<Vec<AtomicU32>>,
     track_peaks_r: Arc<Vec<AtomicU32>>,
-    // Master L & R maximum absolute peaks
-    master_peak_l: Arc<AtomicU32>,
-    master_peak_r: Arc<AtomicU32>,
+    // Master L & R instantaneous raw signed audio samples
+    master_sample_l: Arc<AtomicU32>,
+    master_sample_r: Arc<AtomicU32>,
 }
 
 impl UiHandle {
@@ -359,8 +359,8 @@ impl UiHandle {
             data: Arc::new(Mutex::new(UiData::new(num_tracks))),
             track_peaks_l: Arc::new(track_peaks_l),
             track_peaks_r: Arc::new(track_peaks_r),
-            master_peak_l: Arc::new(AtomicU32::new(0.0f32.to_bits())),
-            master_peak_r: Arc::new(AtomicU32::new(0.0f32.to_bits())),
+            master_sample_l: Arc::new(AtomicU32::new(0.0f32.to_bits())),
+            master_sample_r: Arc::new(AtomicU32::new(0.0f32.to_bits())),
         }
     }
 
@@ -372,11 +372,12 @@ impl UiHandle {
                 atomic_max_f32(&self.track_peaks_r[idx], r.abs());
             }
         }
-        atomic_max_f32(&self.master_peak_l, master_l.abs());
-        atomic_max_f32(&self.master_peak_r, master_r.abs());
+        // Store actual raw signed audio samples without rectification
+        self.master_sample_l.store(master_l.to_bits(), Ordering::Relaxed);
+        self.master_sample_r.store(master_r.to_bits(), Ordering::Relaxed);
     }
 
-    /// Drains the accumulated atomic peaks into a scratch slice (called on UI thread only)
+    /// Drains track peaks and fetches the latest raw master L/R audio samples
     pub fn drain_peaks(&self, out_track_peaks: &mut [(f32, f32)]) -> (f32, f32) {
         let count = out_track_peaks.len().min(self.track_peaks_l.len());
         for i in 0..count {
@@ -384,8 +385,8 @@ impl UiHandle {
             let r = atomic_swap_f32(&self.track_peaks_r[i]);
             out_track_peaks[i] = (l, r);
         }
-        let ml = atomic_swap_f32(&self.master_peak_l);
-        let mr = atomic_swap_f32(&self.master_peak_r);
+        let ml = f32::from_bits(self.master_sample_l.load(Ordering::Relaxed));
+        let mr = f32::from_bits(self.master_sample_r.load(Ordering::Relaxed));
         (ml, mr)
     }
 
@@ -627,7 +628,7 @@ pub fn start_ui_thread(ui_handle: UiHandle, num_tracks: usize) {
                 }
             }
 
-            // 3. Bottom-Right XY Vectorscope (Cols 60..80, Rows 31..42)
+            // 3. Bottom-Right XY Vectorscope / Goniometer (Cols 60..80, Rows 31..42)
             // Header at Row 32 inside Scope box
             let v_hdr = "L x R Scope";
             let v_start = MASTER_COLS + 1 + (20 - 1 - v_hdr.len()) / 2;
@@ -648,19 +649,28 @@ pub fn start_ui_thread(ui_handle: UiHandle, num_tracks: usize) {
             }
             grid[vec_center_row][vec_center_col] = '┼';
 
-            // Plot stereo phase correlation points with scaled amplitude
+            // 45° Goniometer / Stereo Vectorscope:
+            // Mid = (L + R) maps to Vertical Y-axis (In-phase mono is vertical)
+            // Side = (L - R) maps to Horizontal X-axis (Stereo difference expands horizontally)
             let s_len = data_guard.master_l_samples.len();
             for i in 0..s_len {
                 let l = data_guard.master_l_samples[i];
                 let r = data_guard.master_r_samples[i];
 
-                let scaled_l = scale_amplitude(l, 8.5);
-                let scaled_r = scale_amplitude(r, 3.5);
+                if l.abs() < 1e-4 && r.abs() < 1e-4 {
+                    continue;
+                }
 
-                // X maps Left [-1.0, 1.0] -> cols [61, 78] (center 70)
-                let x_col = (vec_center_col as f32 + scaled_l).round().clamp(61.0, 78.0) as usize;
-                // Y maps Right [-1.0, 1.0] -> rows [41, 33] (center 37)
-                let y_row = (vec_center_row as f32 - scaled_r).round().clamp(33.0, 41.0) as usize;
+                let side = (l - r) * 0.70710678;
+                let mid = (l + r) * 0.70710678;
+
+                let scaled_side = scale_amplitude(side, 8.5);
+                let scaled_mid = scale_amplitude(mid, 3.5);
+
+                // X maps Side -> cols [61, 78] (center 70)
+                let x_col = (vec_center_col as f32 + scaled_side).round().clamp(61.0, 78.0) as usize;
+                // Y maps Mid -> rows [41, 33] (center 37, upward positive)
+                let y_row = (vec_center_row as f32 - scaled_mid).round().clamp(33.0, 41.0) as usize;
 
                 grid[y_row][x_col] = '*';
             }
