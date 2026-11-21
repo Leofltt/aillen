@@ -639,11 +639,11 @@ Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 
 ### Track 4: SynthResonator (Circuit-Bent Karplus-Strong & Modal Resonator)
 
-A physical modeling string and modal synthesizer with a noise exciter, fractional delay line, parallel modal resonator, and internal circuit-bent wavefolding/bitcrushing distortion inside the feedback loop.
+A physical modeling string and stereo modal synthesizer driven by a velocity-sensitive noise exciter feeding a Karplus-Strong fractional delay line in parallel with a 6-mode coupled-form resonant modal bank, followed by an equal-power crossfade and post-mix per-voice stereo circuit-bent wavefolder & bitcrusher.
 
 ```
   +-------------------------------------------------------+
-  | Noise Generator PRNG                                  |
+  | Noise Generator PRNG (scaled by velocity)             |
   +-------------------------------------------------------+
                              |
                              v
@@ -656,69 +656,63 @@ A physical modeling string and modal synthesizer with a noise exciter, fractiona
                              |
                    Exciter Impulse Burst
                              |
-                             v
-           +-----------------+-----------------------+
-           |                                         |
-           v                                         |
-  +-----------------------------+                    |
-  | Karplus-Strong Delay Line   | <--- Pitch Hz      |
-  | (Fractional Linear Interp)  |                    |
-  +-----------------------------+                    |
-                 |                                   |
-                 v                                   |
-  +-----------------------------+                    |
-  | Wavefolder (bend_drive/fold)|                    |
-  +-----------------------------+                    |
-                 |                                   |
-                 v                                   |
-  +-----------------------------+                    |
-  | Bitcrusher (bend_bits)      |                    |
-  +-----------------------------+                    |
-                 |                                   |
-                 v                                   |
-  +-----------------------------+                    |
-  | Loop Dampening LowPass      | <--- dampening (Hz)|
-  +-----------------------------+                    |
-                 |                                   |
-                 v                                   |
-        [x Feedback Gain]                            |
-                 |                                   |
-                 v                                   |
-            ( + Sum ) <------------------------------+
-                 |
-                 v
-        [Soft Clip Tanh()]
-                 |
-                 +-------------------+ (Loop Feedback to Delay Line)
-                 |
-                 +-----------------------------------+
-                 |                                   |
-                 v                                   v
-        (1.0 - modal_mix)                     [modal_mix]
-                 |                                   |
-                 |                                   v
-                 |                    +-------------------------------+
-                 |                    | Parallel Modal Resonator      |
-                 |                    | (BPF at Pitch * modal_ratio)  |
-                 |                    +-------------------------------+
-                 |                                   |
-                 +-----------------+-----------------+
-                                   |
-                                   v
-                        Output -> Track FxChain
+                             +---------------------------------------------------+
+                             | (Branch A: String)                                | (Branch B: Parallel Modal Bank)
+                             v                                                   v
+                    +-----------------------------+             +-------------------------------------------+
+                    | Karplus-Strong Delay Line   | <-- Pitch   | 6-Mode High-Q Modal Resonator Bank        |
+                    | (Fractional Linear Interp)  |             |  - Mode 0: f0 (center-panned fundamental) |
+                    +-----------------------------+             |  - Modes 1..5: f0 * (k+1)^log2(ratio)     |
+                             |                                  |  - RMS-normalized gain (matched loudness) |
+                             v                                  |  - Decay tracks `feedback`, HF `dampening`|
+                    +-----------------------------+             |  - Odd/Even L/R pan (`modal_width`)       |
+                    | Loop Dampening LPF + DC Blk | <-- damp    +-------------------------------------------+
+                    +-----------------------------+                               | (L / R)
+                             |                                                    v
+                             v                                               [ Tanh() ]
+                    [x Feedback Gain]                                             |
+                             |                                                    |
+                             v                                                    |
+                    (+ Exciter) -> [Tanh()] ---> (Loop Feedback)                  |
+                             | (Center L/R)                                       | (Stereo L/R)
+                             v                                                    v
+                      [cos(mix * pi/2)]                                    [sin(mix * pi/2)]
+                             |                                                    |
+                             +-------------------------+--------------------------+
+                                                       | (Stereo L/R)
+                                                       v
+                                          +-------------------------+
+                                          | Stereo Wavefolder (L/R) | <--- bend_drive, bend_folds
+                                          +-------------------------+
+                                                       |
+                                                       v
+                                          +-------------------------+
+                                          | Stereo Bitcrusher (L/R) | <--- bend_bits
+                                          +-------------------------+
+                                                       |
+                                                Polyphonic Sum
+                                                       |
+                                                       v
+                                          +-------------------------+
+                                          | Headroom Gain Normalizer|
+                                          +-------------------------+
+                                                       |
+                                                       v
+                                           Stereo Output -> Track FxChain
 ```
 
 | Address | Argument | Argument Types | Default Value | Reasonable Range / Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `/track/4/exciter/adsr` | `ffff` | `[f32, f32, f32, f32]` | `[0.001, 0.03, 0.0, 0.01]` | Exciter noise burst ADSR parameters `[A, D, S, R]`. A/D/R (seconds): `0.001` to `10.0`. S (level): `0.0` to `1.0`. |
 | `/track/4/exciter/cutoff` | `f` | `f32` | `4000.0` | Exciter noise burst lowpass cutoff frequency in Hz. Range: `20.0` to `20000.0` Hz. |
-| `/track/4/feedback` | `f` | `f32` | `0.95` | Delay line decay feedback ratio. Range: `0.0` to `0.999`. |
-| `/track/4/dampening` | `f` | `f32` | `8000.0` | Internal feedback loop lowpass dampening cutoff frequency in Hz. Range: `200.0` to `20000.0` Hz. |
-| `/track/4/bend/drive` | `f` | `f32` | `1.0` | Circuit-bent wavefolder input drive multiplier inside feedback loop. Range: `1.0` to `10.0`. |
-| `/track/4/bend/folds` | `f` | `f32` | `0.0` | Circuit-bent wavefolder intensity inside feedback loop. Range: `0.0` (clean/bypass) to `5.0`. |
-| `/track/4/bend/bits` | `f` | `f32` | `16.0` | Circuit-bent bitcrusher quantization bits inside feedback loop. Range: `1.0` to `16.0` (16.0 is bypass). |
-| `/track/4/modal/ratio` | `f` | `f32` | `1.5` | Inharmonic detune ratio multiplier for parallel modal resonator filter. Range: `0.5` to `8.0`. |
-| `/track/4/modal/mix` | `f` | `f32` | `0.2` | Mix level ratio for parallel modal resonator output. Range: `0.0` (pure string) to `1.0` (pure modal). |
+| `/track/4/feedback` | `f` | `f32` | `0.95` | Decay time control: Karplus-Strong delay feedback ratio and modal bank T60 decay. Range: `0.0` to `0.999`. |
+| `/track/4/dampening` | `f` | `f32` | `8000.0` | Feedback loop lowpass dampening cutoff in Hz and high-partial decay rolloff for the modal bank. Range: `200.0` to `20000.0` Hz. |
+| `/track/4/bend/drive` | `f` | `f32` | `1.0` | Post-mix per-voice circuit-bent wavefolder input drive multiplier. Range: `1.0` to `10.0`. |
+| `/track/4/bend/folds` | `f` | `f32` | `0.0` | Post-mix per-voice circuit-bent wavefolder intensity. Range: `0.0` (clean/bypass) to `5.0`. |
+| `/track/4/bend/bits` | `f` | `f32` | `16.0` | Post-mix per-voice circuit-bent bitcrusher quantization bits. Range: `1.0` to `16.0` (16.0 is bypass). |
+| `/track/4/modal/ratio` | `f` | `f32` | `1.5` | Overtone stretch ratio for the 6-mode modal bank with `f0` anchored (`f_k = f0 * (k+1)^log2(ratio)`). Range: `0.5` to `8.0`. |
+| `/track/4/modal/mix` | `f` | `f32` | `0.2` | Equal-power crossfade between Karplus-Strong string (`0.0`) and 6-mode modal resonator (`1.0`). |
+| `/track/4/modal/width` | `f` | `f32` | `0.0` | Stereo spread for odd/even modal overtones (`0.0` = mono, `1.0` = full L/R spread; fundamental stays centered). |
 
 ### Track 6: Synth303 (Acid Bass Synth)
 

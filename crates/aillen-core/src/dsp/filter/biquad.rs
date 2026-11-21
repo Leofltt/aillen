@@ -80,6 +80,12 @@ impl BiquadFilter {
             self.calculate_coefficients();
         }
     }
+
+    /// Resets internal filter state registers to zero.
+    pub fn reset(&mut self) {
+        self.z1 = 0.0;
+        self.z2 = 0.0;
+    }
     
     /// Recalculates filter coefficients based on current sample rate, cutoff, Q, and filter type.
     fn calculate_coefficients(&mut self) {

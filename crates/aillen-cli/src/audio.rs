@@ -297,6 +297,10 @@ pub enum AudioMessage {
         track_id: usize,
         mix: f32,
     },
+    ResonatorSetModalWidth {
+        track_id: usize,
+        width: f32,
+    },
 
     // Sampler specific
     /// Loads an audio file into the Sampler buffer.
@@ -1561,6 +1565,14 @@ pub fn start_audio_thread(
                                  if track_id < mixer.tracks.len() {
                                      if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
                                          synth.patch.modal_mix = mix;
+                                         synth.set_patch(synth.patch.clone());
+                                     }
+                                 }
+                             }
+                             AudioMessage::ResonatorSetModalWidth { track_id, width } => {
+                                 if track_id < mixer.tracks.len() {
+                                     if let Some(synth) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SynthResonator>() {
+                                         synth.patch.modal_width = width.clamp(0.0, 1.0);
                                          synth.set_patch(synth.patch.clone());
                                      }
                                  }

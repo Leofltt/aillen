@@ -20,6 +20,12 @@ impl Bitcrusher {
             held_sample: 0.0,
         }
     }
+
+    /// Resets sample-and-hold state to zero.
+    pub fn reset(&mut self) {
+        self.sample_count = 0;
+        self.held_sample = 0.0;
+    }
 }
 
 impl Default for Bitcrusher {

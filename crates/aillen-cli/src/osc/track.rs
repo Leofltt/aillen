@@ -326,6 +326,11 @@ pub fn parse_track_command(
                 let _ = prod.try_send(AudioMessage::ResonatorSetModalMix { track_id, mix });
             }
         }
+        "modal/width" if track_id == 4 => {
+            if let Some(width) = msg.args.get(0).and_then(osc_to_f32) {
+                let _ = prod.try_send(AudioMessage::ResonatorSetModalWidth { track_id, width });
+            }
+        }
 
         // SWAVE specific OSC commands (Track-addressable or with swave/* prefix)
         "swave/mode" => {
