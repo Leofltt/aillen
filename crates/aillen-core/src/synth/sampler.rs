@@ -162,6 +162,36 @@ impl Sampler {
         }
     }
 
+    /// Estimates the playback duration of a triggered note/slice in milliseconds,
+    /// accounting for slicing mode, stretch mode, playback speed, and pitch ratio.
+    pub fn estimated_note_duration_ms(&self, frequency: f32) -> Option<f32> {
+        let buffer = self.sample_buffer.as_ref()?;
+        if buffer.channels == 0 || buffer.sample_rate <= 0.0 {
+            return None;
+        }
+        let num_frames = buffer.data.len() / buffer.channels;
+        if num_frames == 0 {
+            return None;
+        }
+
+        let frames_to_play = if self.slice_mode {
+            (num_frames as f64) / (self.num_slices.max(1) as f64)
+        } else {
+            num_frames as f64
+        };
+
+        let rate_multiplier = match self.stretch_mode {
+            StretchMode::Resample => {
+                let effective_pitch = self.pitch_ratio * (frequency / self.root_freq.max(1e-6));
+                (effective_pitch * self.speed_ratio).max(0.001) as f64
+            }
+            StretchMode::Granular => self.speed_ratio.max(0.001) as f64,
+        };
+
+        let duration_sec = frames_to_play / (buffer.sample_rate as f64 * rate_multiplier);
+        Some((duration_sec * 1000.0).max(1.0) as f32)
+    }
+
     /// Triggers note playback. Attempts to find a free voice or steals voice 0.
     pub fn note_on(&mut self, frequency: f32, velocity: f32) {
         if let Some(voice) = self.voices.iter_mut().find(|v| !v.active) {

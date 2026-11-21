@@ -6,7 +6,7 @@ Opinionated, feature-incomplete audio engine, DSP library, and live synthesizers
 
 This project is set up as a Cargo Workspace containing:
 
-- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including Biquad, DJ performance, Formant, Comb, and Elektron Base & Width serial filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), wavefolding saturators, bitcrushing degraders, a stereo delay (Tape and Granular modes), an Elektron-style stereo reverb, a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, a 303 bass synth, a rave hubass synth, a modal resonator synth, a Monomachine-inspired SuperWave synth, and a sample bank).
+- `aillen-core`: A modular DSP library hosting mathematical primitives, oscillators, filters (including Biquad, DJ performance, Formant, Comb, and Elektron Base & Width serial filters), ADSR envelopes, sidechainable dynamic effects (Compressor, AM/Ring Modulator), wavefolding saturators, bitcrushing degraders, a rhythmic amplitude chopper/gate, a stereo delay (Tape and Granular modes), an Elektron-style stereo reverb, a sequential track `FxChain`, and instrument implementations (including a 2-operator FM synth, a sampler, a 303 bass synth, a rave hubass synth, a modal resonator synth, a Monomachine-inspired SuperWave synth, and a sample bank).
 - `aillen-cli`: A standalone performance synthesizer that wraps `aillen-core` with real-time stereo audio (`cpal`) and an asynchronous UDP OSC server mapped via lock-free channels (`crossbeam-channel`).
 
 ---
@@ -111,6 +111,11 @@ Each track owns an independent `FxChain` containing a sequential arrangement of 
                                  +---------+ +---------+
                                       |           |
                                       v           v
+                                 +---------+ +---------+
+                                 | Chopper | | Chopper | <--- Note Trigger / Dur
+                                 +---------+ +---------+
+                                      |           |
+                                      v           v
                                    L Output    R Output
 ```
 
@@ -129,7 +134,7 @@ cargo build --workspace --release
 ### Starting the Synth
 
 ```bash
-# Start with default settings (8 voices, port 8000, and scanning ~/Desktop/KairosSamples)
+# Start with default settings (8 voices, port 8000, and scanning ~/Desktop/live_coding/KairosSamples)
 cargo run -p aillen-cli --release
 
 # Start with a custom sample directory
@@ -265,6 +270,11 @@ Each track features an independent effects chain that can be modulated in real-t
 | `/track/<id>/fx/compressor/release` | `f` | `f32` | `0.1` | Release time in seconds. Range: `0.01` to `5.0`. |
 | `/track/<id>/fx/compressor/makeup` | `f` | `f32` | `0.0` | Makeup gain in dB. Range: `-20.0` to `30.0`. |
 | `/track/<id>/fx/compressor/sidechain` | `i`/`b` | `i32` / `bool` | `0` (false) | Enable/disable sidechain compression modulated by external source. |
+| `/track/<id>/fx/chopper/rate` | `f` | `f32` | `0.0` | Chopper division rate per note/sample length (modes `0`/`1`) or frequency in Hz (mode `2`). `0.0` = bypass. |
+| `/track/<id>/fx/chopper/shape` | `i` | `i32` | `0` | Window shape: `0` = Square (soft-edged), `1` = Hann, `2` = RampDown, `3` = RampUp, `4` = Cosine (peak-start). |
+| `/track/<id>/fx/chopper/depth` | `f` | `f32` | `1.0` | Amplitude modulation depth. Range: `0.0` (dry) to `1.0` (full gating). |
+| `/track/<id>/fx/chopper/duty` | `f` | `f32` | `0.5` | Active window pulse width per cycle. Range: `0.05` to `1.0`. |
+| `/track/<id>/fx/chopper/mode` | `i` | `i32` | `0` | Timing sync mode: `0` = NoteDur, `1` = SampleLength (Samplers), `2` = FreeHz. |
 
 ### Note Control (Available on all Tracks)
 
@@ -272,7 +282,7 @@ Each track features an independent effects chain that can be modulated in real-t
 | :--- | :--- | :--- | :--- |
 | `/track/<id>/note/on` | `ff` | `[f32, f32]` | `[freq, velocity]` Triggers a note. Frequency range: `20.0` to `20000.0` Hz. Velocity range: `0.0` to `1.0`. |
 | `/track/<id>/note/off` | `f` | `[f32]` | `[freq]` Releases a specific frequency, or all notes if no argument is provided. |
-| `/track/<id>/note` | `fff` | `[f32, f32, f32]` | `[freq, duration_ms, velocity]` Plays a timed note (Track 0, 4, 6, 7, and 8 only). Duration range: `1.0` to `10000.0` ms. |
+| `/track/<id>/note` | `fff` | `[f32, f32, f32]` | `[freq, duration_ms, velocity]` Plays a timed note (synths 0, 4, 6, 7, 8) or triggers sampler playback (tracks 1, 2, 3, 5) while supplying `duration_ms` to the track's `FxChain` Chopper. Duration range: `1.0` to `10000.0` ms. |
 
 ---
 
@@ -475,6 +485,27 @@ An Elektron Monomachine-inspired serial dual filter consisting of a High-Pass fi
   - `width`: `f32` (Bandwidth span added to base for Low-Pass cutoff in Hz). Default: `20000.0`. Range: `10.0` to `20000.0`.
   - `hp_q`: `f32` (High-Pass resonance Q). Default: `0.707`. Range: `0.1` to `10.0`.
   - `lp_q`: `f32` (Low-Pass resonance Q). Default: `0.707`. Range: `0.1` to `10.0`.
+
+### 20. Rhythmic Amplitude Chopper (`aillen_core::dsp::Chopper`)
+
+A stereo-linked, unipolar LFO amplitude modulator placed at the final stage of each track's `FxChain` to create rhythmic break/synth chopping and gating effects without retriggering sample buffers. Sharp edges use a ~1.5 ms smoothstep fade to prevent clicks while preserving stereo phase lock (`L` and `R` share the same LFO phase).
+
+- **Shapes (`ChopperShape`)**:
+  - `Square` (`0`): Soft-edged rectangular gate within `duty`.
+  - `Hann` (`1`): Rounded bell window (`0` at edges, `1` at center of `duty`).
+  - `RampDown` (`2`): Percussive decay ramp (`1` -> `0`) with 1.5 ms anti-click fade-in.
+  - `RampUp` (`3`): Reverse swell ramp (`0` -> `1`) with 1.5 ms anti-click fade-out.
+  - `Cosine` (`4`): Smooth peak-start tremolo centered on phase `0.0` (initial transients hit at `1.0`).
+- **Sync Modes (`ChopperSyncMode`)**:
+  - `NoteDur` (`0`): `rate` divides the triggered note duration (`duration_ms`); phase resets on note trigger (falls back to sample/slice duration on raw `/note/on`).
+  - `SampleLength` (`1`): `rate` divides the active sample/slice playback length on Sampler tracks (falls back to `NoteDur` on synths); phase resets on note trigger.
+  - `FreeHz` (`2`): `rate` sets LFO frequency directly in Hz; free-running across notes.
+- **Parameters**:
+  - `rate`: `f32` (divisions per note/sample, or Hz in `FreeHz` mode). Default: `0.0` (bypassed). Range: `>= 0.0`.
+  - `shape`: `ChopperShape`. Default: `Square` (`0`).
+  - `depth`: `f32` (modulation depth via `gain = 1 - depth * (1 - window)`). Default: `1.0`. Range: `0.0` to `1.0`.
+  - `duty`: `f32` (active window duty cycle per period). Default: `0.5`. Range: `0.05` to `1.0`.
+  - `sync_mode`: `ChopperSyncMode`. Default: `NoteDur` (`0`).
 
 ---
 
@@ -894,7 +925,7 @@ Inspired by the Elektron Monomachine SuperWave architecture (`SWAVE-SAW` and `SW
 
 ## 5. SampleBank Loading
 
-Aillen can automatically scan a directory on startup (defaulting to `~/Desktop/KairosSamples` if not specified) and preload all found `.wav`, `.flac`, `.mp3`, `.aif`, and `.aiff` files.
+Aillen can automatically scan a directory on startup (defaulting to `~/Desktop/live_coding/KairosSamples` if not specified) and preload all found `.wav`, `.flac`, `.mp3`, `.aif`, and `.aiff` files.
 
 You can trigger these preloaded buffers instantly via OSC using `/track/1/sample/select "subfolder/myloop.wav"`.
 

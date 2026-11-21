@@ -16,6 +16,24 @@ fn osc_to_usize(arg: &rosc::OscType) -> Option<usize> {
     }
 }
 
+fn osc_to_f32(arg: &rosc::OscType) -> Option<f32> {
+    match arg {
+        rosc::OscType::Float(f) => Some(*f),
+        rosc::OscType::Double(d) => Some(*d as f32),
+        rosc::OscType::Int(i) => Some(*i as f32),
+        _ => None,
+    }
+}
+
+fn osc_to_i32(arg: &rosc::OscType) -> Option<i32> {
+    match arg {
+        rosc::OscType::Int(i) => Some(*i),
+        rosc::OscType::Float(f) => Some(*f as i32),
+        rosc::OscType::Double(d) => Some(*d as i32),
+        _ => None,
+    }
+}
+
 pub fn parse_track_command(
     track_id: usize,
     sub_addr: &str,
@@ -205,6 +223,31 @@ pub fn parse_track_command(
         "fx/comb/damp" => {
             if let Some(damp) = msg.args.get(0).and_then(|a| a.clone().float()) {
                 let _ = prod.try_send(AudioMessage::SetTrackCombDamp { track_id, damp });
+            }
+        }
+        "fx/chopper/rate" => {
+            if let Some(rate) = msg.args.get(0).and_then(osc_to_f32) {
+                let _ = prod.try_send(AudioMessage::SetTrackChopperRate { track_id, rate });
+            }
+        }
+        "fx/chopper/shape" => {
+            if let Some(shape) = msg.args.get(0).and_then(osc_to_i32) {
+                let _ = prod.try_send(AudioMessage::SetTrackChopperShape { track_id, shape });
+            }
+        }
+        "fx/chopper/depth" => {
+            if let Some(depth) = msg.args.get(0).and_then(osc_to_f32) {
+                let _ = prod.try_send(AudioMessage::SetTrackChopperDepth { track_id, depth });
+            }
+        }
+        "fx/chopper/duty" => {
+            if let Some(duty) = msg.args.get(0).and_then(osc_to_f32) {
+                let _ = prod.try_send(AudioMessage::SetTrackChopperDuty { track_id, duty });
+            }
+        }
+        "fx/chopper/mode" => {
+            if let Some(mode) = msg.args.get(0).and_then(osc_to_i32) {
+                let _ = prod.try_send(AudioMessage::SetTrackChopperMode { track_id, mode });
             }
         }
         // Two-Op specific (Track 0)

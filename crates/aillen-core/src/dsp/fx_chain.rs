@@ -1,4 +1,4 @@
-use crate::dsp::{Compressor, AmRingMod, StereoProcessor, AudioProcessor, ModulationSource, Distortion, DistortionMode, Wavefolder, Bitcrusher};
+use crate::dsp::{Compressor, AmRingMod, StereoProcessor, AudioProcessor, ModulationSource, Distortion, DistortionMode, Wavefolder, Bitcrusher, Chopper};
 use crate::dsp::filter::{DjFilter, CombFilter};
 
 /// A sequential stereo effects processor applying:
@@ -9,6 +9,7 @@ use crate::dsp::filter::{DjFilter, CombFilter};
 /// 5. Comb Filter (Tuned Metallic Resonator)
 /// 6. DJ-style Low-Pass/High-Pass Filter
 /// 7. Dynamic Range Compression (with sidechaining support)
+/// 8. Rhythmic Amplitude Chopper / Gate
 pub struct FxChain {
     /// Ring modulator left channel.
     pub ring_mod_l: AmRingMod,
@@ -40,6 +41,8 @@ pub struct FxChain {
     pub compressor_r: Compressor,
     /// When true, the compressor is sidechained by the external sidechain inputs.
     pub compressor_sidechain: bool,
+    /// Stereo rhythmic amplitude chopper / gate.
+    pub chopper: Chopper,
 }
 
 impl FxChain {
@@ -61,6 +64,7 @@ impl FxChain {
             compressor_l: Compressor::new(sample_rate),
             compressor_r: Compressor::new(sample_rate),
             compressor_sidechain: false,
+            chopper: Chopper::new(sample_rate),
         }
     }
 
@@ -116,7 +120,10 @@ impl FxChain {
             self.compressor_r.process(filt_r)
         };
 
-        (comp_l, comp_r)
+        // 8. Rhythmic Chopper / Amplitude Gate
+        let (chop_l, chop_r) = self.chopper.process_stereo(comp_l, comp_r);
+
+        (chop_l, chop_r)
     }
 }
 
@@ -165,5 +172,20 @@ mod tests {
         
         // Left channel should be processed/changed
         assert!(out_l != 1.0);
+    }
+
+    #[test]
+    fn test_fx_chain_chopper_active() {
+        let mut chain = FxChain::new(44100.0);
+        chain.chopper.set_rate(4.0);
+        chain.chopper.trigger_note(Some(500.0), None);
+
+        // Advance past the 1.5 ms opening fade and into the off-half of the first cycle
+        for _ in 0..3000 {
+            chain.process_stereo(1.0, 1.0);
+        }
+        let (out_l, out_r) = chain.process_stereo(1.0, 1.0);
+        assert!(out_l < 0.01);
+        assert!(out_r < 0.01);
     }
 }

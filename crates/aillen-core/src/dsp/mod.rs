@@ -13,10 +13,12 @@ pub mod limiter;
 pub mod wavefolder;
 pub mod bitcrusher;
 pub mod reverb;
+pub mod chopper;
 
 pub use wavefolder::Wavefolder;
 pub use bitcrusher::Bitcrusher;
 pub use reverb::StereoReverb;
+pub use chopper::{Chopper, ChopperShape, ChopperSyncMode};
 
 pub use am_ring_mod::{AmRingMod, ModulationSource};
 pub use compressor::Compressor;

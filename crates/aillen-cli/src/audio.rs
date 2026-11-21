@@ -1,6 +1,6 @@
 use aillen_core::dsp::{
-    DelayMode, ModulationSource, distortion::DistortionMode, filter::FilterType,
-    oscillator::{Waveform, SubWaveform},
+    ChopperShape, ChopperSyncMode, DelayMode, ModulationSource, distortion::DistortionMode,
+    filter::FilterType, oscillator::{Waveform, SubWaveform},
 };
 use aillen_core::mixer::Mixer;
 use aillen_core::synth::hubass::hubass::SynthHubass;
@@ -662,6 +662,26 @@ pub enum AudioMessage {
         track_id: usize,
         damp: f32,
     },
+    SetTrackChopperRate {
+        track_id: usize,
+        rate: f32,
+    },
+    SetTrackChopperShape {
+        track_id: usize,
+        shape: i32,
+    },
+    SetTrackChopperDepth {
+        track_id: usize,
+        depth: f32,
+    },
+    SetTrackChopperDuty {
+        track_id: usize,
+        duty: f32,
+    },
+    SetTrackChopperMode {
+        track_id: usize,
+        mode: i32,
+    },
     GlobalPanic,
 }
 
@@ -744,7 +764,13 @@ pub fn start_audio_thread(
                         match msg {
                             AudioMessage::TrackNoteOn { track_id, freq, vel } => {
                                 if track_id < mixer.tracks.len() {
+                                    let sample_dur = mixer.tracks[track_id]
+                                        .instrument
+                                        .as_any()
+                                        .downcast_ref::<Sampler>()
+                                        .and_then(|s| s.estimated_note_duration_ms(freq));
                                     mixer.tracks[track_id].instrument.note_on(freq, vel);
+                                    mixer.tracks[track_id].fx_chain.chopper.trigger_note(None, sample_dur);
                                 }
                             }
                             AudioMessage::TrackNoteOff { track_id, freq } => {
@@ -759,9 +785,11 @@ pub fn start_audio_thread(
                             }
                             AudioMessage::TrackTimedNote { track_id, freq, vel, duration_ms } => {
                                 if track_id < mixer.tracks.len() {
+                                     let mut sample_dur = None;
                                      if let Some(two_op) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<TwoOpSynth>() {
                                          two_op.trigger_note(freq, vel, duration_ms);
                                      } else if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
+                                         sample_dur = sampler.estimated_note_duration_ms(freq);
                                          sampler.note_on(freq, vel);
                                      } else if let Some(synth303) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Synth303>() {
                                          synth303.trigger_note(freq, vel, duration_ms);
@@ -772,6 +800,7 @@ pub fn start_audio_thread(
                                      } else if let Some(swave) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<SwaveSynth>() {
                                          swave.trigger_note(freq, vel, duration_ms);
                                      }
+                                     mixer.tracks[track_id].fx_chain.chopper.trigger_note(Some(duration_ms), sample_dur);
                                  }
                              }
                               AudioMessage::TwoOpSetLegato { track_id, enabled } => {
@@ -1437,6 +1466,31 @@ pub fn start_audio_thread(
                                  if track_id < mixer.tracks.len() {
                                      mixer.tracks[track_id].fx_chain.comb_filter_l.dampening_filter.set_cutoff(damp);
                                      mixer.tracks[track_id].fx_chain.comb_filter_r.dampening_filter.set_cutoff(damp);
+                                 }
+                             }
+                             AudioMessage::SetTrackChopperRate { track_id, rate } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.chopper.set_rate(rate);
+                                 }
+                             }
+                             AudioMessage::SetTrackChopperShape { track_id, shape } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.chopper.shape = ChopperShape::from_i32(shape);
+                                 }
+                             }
+                             AudioMessage::SetTrackChopperDepth { track_id, depth } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.chopper.set_depth(depth);
+                                 }
+                             }
+                             AudioMessage::SetTrackChopperDuty { track_id, duty } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.chopper.set_duty(duty);
+                                 }
+                             }
+                             AudioMessage::SetTrackChopperMode { track_id, mode } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.chopper.sync_mode = ChopperSyncMode::from_i32(mode);
                                  }
                              }
                              AudioMessage::ResonatorSetExciterAdsr { track_id, a, d, s, r } => {

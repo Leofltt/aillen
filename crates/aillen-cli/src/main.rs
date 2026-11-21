@@ -42,7 +42,11 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut bank = aillen_core::sample_bank::SampleBank::new();
-    let target_dir = args.samples_dir;
+    let target_dir = args.samples_dir.or_else(|| {
+        std::env::var("HOME")
+            .map(|h| format!("{}/Desktop/live_coding/KairosSamples", h))
+            .ok()
+    });
 
     if let Some(ref dir) = target_dir {
         if let Err(e) = bank.load_directory(dir) {
