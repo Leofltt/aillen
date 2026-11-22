@@ -44,6 +44,8 @@ pub struct Sampler {
     pub stutter_count: usize,
     /// File path of the currently loaded sample.
     pub current_path: Option<String>,
+    /// Monotonic trigger counter for oldest-voice stealing.
+    voice_counter: u64,
 }
 
 impl Sampler {
@@ -70,39 +72,57 @@ impl Sampler {
             selected_slice: 0,
             stutter_count: 1,
             current_path: None,
+            voice_counter: 0,
         }
+    }
+
+    /// Sets the underlying shared audio sample buffer for subsequent notes
+    /// without disrupting already-sounding voices.
+    pub fn set_sample_arc(&mut self, buffer: Arc<SampleBuffer>) {
+        self.sample_buffer = Some(buffer);
     }
 
     /// Sets the underlying audio sample buffer.
     pub fn set_sample(&mut self, buffer: SampleBuffer) {
-        let arc_buf = Arc::new(buffer);
-        self.sample_buffer = Some(arc_buf.clone());
-        for voice in &mut self.voices {
-            voice.set_sample(arc_buf.clone());
-        }
+        self.set_sample_arc(Arc::new(buffer));
     }
 
     /// Configures the sampler playback mode.
     pub fn set_play_mode(&mut self, mode: PlayMode) {
         self.play_mode = mode;
         for voice in &mut self.voices {
-            voice.play_mode = mode;
+            if voice.active {
+                voice.play_mode = mode;
+            }
         }
     }
 
     /// Configures the pitch ratio.
     pub fn set_pitch_ratio(&mut self, ratio: f32) {
-        self.pitch_ratio = ratio.max(0.001);
+        self.pitch_ratio = if ratio.is_finite() {
+            ratio.clamp(0.001, 16.0)
+        } else {
+            1.0
+        };
+        let root = self.root_freq.max(1e-6);
         for voice in &mut self.voices {
-            voice.pitch_ratio = self.pitch_ratio * (voice.triggered_freq / self.root_freq);
+            if voice.active {
+                voice.pitch_ratio = self.pitch_ratio * (voice.triggered_freq / root);
+            }
         }
     }
 
     /// Configures the playback speed ratio.
     pub fn set_speed_ratio(&mut self, ratio: f32) {
-        self.speed_ratio = ratio.max(0.001);
+        self.speed_ratio = if ratio.is_finite() {
+            ratio.clamp(0.001, 16.0)
+        } else {
+            1.0
+        };
         for voice in &mut self.voices {
-            voice.speed_ratio = self.speed_ratio;
+            if voice.active {
+                voice.speed_ratio = self.speed_ratio;
+            }
         }
     }
 
@@ -110,15 +130,23 @@ impl Sampler {
     pub fn set_stretch_mode(&mut self, mode: StretchMode) {
         self.stretch_mode = mode;
         for voice in &mut self.voices {
-            voice.stretch_mode = mode;
+            if voice.active {
+                voice.stretch_mode = mode;
+            }
         }
     }
 
     /// Configures the grain duration in milliseconds.
     pub fn set_grain_size(&mut self, size_ms: f32) {
-        self.grain_size_ms = size_ms.clamp(5.0, 500.0);
+        self.grain_size_ms = if size_ms.is_finite() {
+            size_ms.clamp(5.0, 500.0)
+        } else {
+            40.0
+        };
         for voice in &mut self.voices {
-            voice.grain_size_ms = self.grain_size_ms;
+            if voice.active {
+                voice.grain_size_ms = self.grain_size_ms;
+            }
         }
     }
 
@@ -126,40 +154,30 @@ impl Sampler {
     pub fn set_overlap(&mut self, overlap: usize) {
         self.overlap = overlap.clamp(1, 16);
         for voice in &mut self.voices {
-            voice.overlap = self.overlap;
+            if voice.active {
+                voice.overlap = self.overlap;
+            }
         }
     }
 
-    /// Enables or disables slicing mode.
+    /// Enables or disables slicing mode (takes effect on the next `note_on`).
     pub fn set_slice_mode(&mut self, enabled: bool) {
         self.slice_mode = enabled;
-        for voice in &mut self.voices {
-            voice.slice_mode = enabled;
-        }
     }
 
-    /// Sets the total number of slices.
+    /// Sets the total number of slices (takes effect on the next `note_on`).
     pub fn set_num_slices(&mut self, n: usize) {
-        self.num_slices = n.max(1);
-        for voice in &mut self.voices {
-            voice.num_slices = self.num_slices;
-        }
+        self.num_slices = n.clamp(1, 128);
     }
 
-    /// Sets the selected slice index.
+    /// Sets the selected slice index (takes effect on the next `note_on`).
     pub fn set_selected_slice(&mut self, slice: usize) {
         self.selected_slice = slice;
-        for voice in &mut self.voices {
-            voice.selected_slice = slice;
-        }
     }
 
-    /// Sets the stutter count.
+    /// Sets the stutter count (takes effect on the next `note_on`).
     pub fn set_stutter_count(&mut self, count: usize) {
-        self.stutter_count = count.max(1);
-        for voice in &mut self.voices {
-            voice.stutter_count = self.stutter_count;
-        }
+        self.stutter_count = count.clamp(1, 64);
     }
 
     /// Estimates the playback duration of a triggered note/slice in milliseconds,
@@ -192,34 +210,62 @@ impl Sampler {
         Some((duration_sec * 1000.0).max(1.0) as f32)
     }
 
-    /// Triggers note playback. Attempts to find a free voice or steals voice 0.
+    /// Triggers note playback. If `slice_mode` is enabled, smoothly chokes any
+    /// active voices (~2 ms fade-out). Otherwise runs polyphonically and steals
+    /// the oldest voice only when all voices are busy.
     pub fn note_on(&mut self, frequency: f32, velocity: f32) {
-        if let Some(voice) = self.voices.iter_mut().find(|v| !v.active) {
-            voice.play_mode = self.play_mode;
-            voice.speed_ratio = self.speed_ratio;
-            voice.pitch_ratio = self.pitch_ratio * (frequency / self.root_freq);
-            voice.stretch_mode = self.stretch_mode;
-            voice.grain_size_ms = self.grain_size_ms;
-            voice.overlap = self.overlap;
-            voice.slice_mode = self.slice_mode;
-            voice.num_slices = self.num_slices;
-            voice.selected_slice = self.selected_slice;
-            voice.stutter_count = self.stutter_count;
-            voice.note_on(frequency, velocity);
-        } else {
-            let voice = &mut self.voices[0];
-            voice.play_mode = self.play_mode;
-            voice.speed_ratio = self.speed_ratio;
-            voice.pitch_ratio = self.pitch_ratio * (frequency / self.root_freq);
-            voice.stretch_mode = self.stretch_mode;
-            voice.grain_size_ms = self.grain_size_ms;
-            voice.overlap = self.overlap;
-            voice.slice_mode = self.slice_mode;
-            voice.num_slices = self.num_slices;
-            voice.selected_slice = self.selected_slice;
-            voice.stutter_count = self.stutter_count;
-            voice.note_on(frequency, velocity);
+        let Some(buffer) = self.sample_buffer.clone() else {
+            return;
+        };
+        if self.voices.is_empty() {
+            return;
         }
+
+        if self.slice_mode {
+            for voice in &mut self.voices {
+                if voice.active {
+                    voice.begin_fade_out();
+                }
+            }
+        }
+
+        let target_idx = self
+            .voices
+            .iter()
+            .position(|v| !v.active)
+            .or_else(|| {
+                self.voices
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.is_fading_out())
+                    .min_by_key(|(_, v)| v.age)
+                    .map(|(idx, _)| idx)
+            })
+            .unwrap_or_else(|| {
+                self.voices
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, v)| v.age)
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0)
+            });
+
+        self.voice_counter = self.voice_counter.wrapping_add(1);
+        let root = self.root_freq.max(1e-6);
+        let voice = &mut self.voices[target_idx];
+        voice.age = self.voice_counter;
+        voice.set_sample(buffer);
+        voice.play_mode = self.play_mode;
+        voice.speed_ratio = self.speed_ratio;
+        voice.pitch_ratio = self.pitch_ratio * (frequency / root);
+        voice.stretch_mode = self.stretch_mode;
+        voice.grain_size_ms = self.grain_size_ms;
+        voice.overlap = self.overlap;
+        voice.slice_mode = self.slice_mode;
+        voice.num_slices = self.num_slices;
+        voice.selected_slice = self.selected_slice;
+        voice.stutter_count = self.stutter_count;
+        voice.note_on(frequency, velocity);
     }
 
     /// Releases active note frequencies matching `frequency`.
@@ -248,18 +294,21 @@ impl Sampler {
     pub fn process(&mut self) -> (f32, f32) {
         let mut mix_l = 0.0;
         let mut mix_r = 0.0;
-        let mut active_count = 0;
-        
+        let mut sustained_count = 0;
+
         for voice in &mut self.voices {
             if voice.active {
+                let fading = voice.is_fading_out();
                 let (l, r) = voice.process();
                 mix_l += l;
                 mix_r += r;
-                active_count += 1;
+                if !fading {
+                    sustained_count += 1;
+                }
             }
         }
 
-        let headroom = 1.0 / (active_count as f32).max(1.0).sqrt();
+        let headroom = 1.0 / (sustained_count as f32).max(1.0).sqrt();
         let out_l = self.dj_filter_l.process(mix_l * headroom);
         let out_r = self.dj_filter_r.process(mix_r * headroom);
         (out_l, out_r)
@@ -353,10 +402,12 @@ mod tests {
         voice.slice_mode = true;
         voice.num_slices = 4;
         voice.selected_slice = 1;
-        voice.stutter_count = 2;
+        voice.stutter_count = 4;
 
+        let mut data = vec![0.5; 10000];
+        data[2500] = 0.0; // Anchor zero-crossing exactly at slice 1 start
         let buffer = SampleBuffer {
-            data: vec![0.5; 10000],
+            data,
             channels: 1,
             sample_rate: 44100.0,
         };
@@ -364,17 +415,109 @@ mod tests {
         voice.note_on(261.63, 1.0);
 
         assert!(voice.active);
-        
-        let (l, r) = voice.process();
-        assert_eq!(l, 0.0); // Faded in to 0.0 at the boundary start
-        assert_eq!(r, 0.0);
 
-        // Advance past the 5ms fade-in window (220.5 samples at 44.1kHz)
-        for _ in 0..250 {
-            voice.process();
+        let (l0, r0) = voice.process();
+        assert_eq!(l0, 0.0);
+        assert_eq!(r0, 0.0);
+
+        let mut max_abs = 0.0_f32;
+        let mut peak_count = 0_usize;
+        let mut in_peak = false;
+        let mut total_samples = 1_usize;
+
+        while voice.active && total_samples < 5000 {
+            let (l, r) = voice.process();
+            max_abs = max_abs.max(l.abs()).max(r.abs());
+            if l > 0.45 && !in_peak {
+                peak_count += 1;
+                in_peak = true;
+            } else if l < 0.05 {
+                in_peak = false;
+            }
+            total_samples += 1;
         }
-        let (l, r) = voice.process();
-        assert_eq!(l, 0.5); // Fully faded in
-        assert_eq!(r, 0.5);
+
+        assert!(!voice.active, "stuttered slice should deactivate cleanly after one slice duration");
+        assert!(max_abs <= 0.5001, "stutter volume exploded: {max_abs}");
+        assert_eq!(peak_count, 4, "expected 4 distinct stutter repeats, got {peak_count}");
+        assert!(total_samples <= 2505, "expected total length ~2500 samples, got {total_samples}");
+    }
+
+    #[test]
+    fn test_sampler_granular_overlap_and_oneshot() {
+        let mut voice = SamplerVoice::new(44100.0);
+        voice.stretch_mode = StretchMode::Granular;
+        voice.grain_size_ms = 20.0;
+        voice.overlap = 8;
+        voice.pitch_ratio = 2.0;
+
+        let buffer = SampleBuffer {
+            data: vec![1.0; 2000],
+            channels: 1,
+            sample_rate: 44100.0,
+        };
+        voice.set_sample(Arc::new(buffer));
+        voice.note_on(261.63, 1.0);
+
+        let mut max_abs = 0.0_f32;
+        for _ in 0..3500 {
+            let (l, r) = voice.process();
+            max_abs = max_abs.max(l.abs()).max(r.abs());
+        }
+
+        assert!(max_abs > 0.5, "granular mode produced insufficient level: {max_abs}");
+        assert!(max_abs <= 1.15, "granular overlap gain not normalized: {max_abs}");
+        assert!(!voice.active, "one-shot granular voice did not finish after EOF + grain tail");
+    }
+
+    #[test]
+    fn test_sampler_slice_choke_and_polyphony() {
+        let mut sliced = Sampler::new(44100.0, 4);
+        sliced.set_slice_mode(true);
+        sliced.set_num_slices(4);
+        sliced.set_sample(SampleBuffer {
+            data: vec![0.5; 10000],
+            channels: 1,
+            sample_rate: 44100.0,
+        });
+        sliced.note_on(261.63, 1.0);
+        let mut last = (0.0, 0.0);
+        for _ in 0..200 {
+            last = sliced.process();
+        }
+        assert!((last.0 - 0.5).abs() < 1e-4, "expected sustained level 0.5, got {}", last.0);
+
+        // Second note in slice_mode smoothly chokes previous voice within ~3 ms
+        sliced.note_on(261.63, 1.0);
+        for _ in 0..140 {
+            sliced.process();
+        }
+        assert_eq!(sliced.voices.iter().filter(|v| v.active).count(), 1);
+
+        // Non-sliced sampler stays polyphonic and isolates active voices from new buffers/params
+        let mut poly = Sampler::new(44100.0, 4);
+        poly.set_sample(SampleBuffer {
+            data: vec![0.4; 2000],
+            channels: 1,
+            sample_rate: 44100.0,
+        });
+        poly.note_on(261.63, 1.0);
+        for _ in 0..50 {
+            poly.process();
+        }
+
+        poly.set_sample(SampleBuffer {
+            data: vec![0.8; 2000],
+            channels: 1,
+            sample_rate: 44100.0,
+        });
+        poly.set_stutter_count(4);
+        poly.note_on(261.63, 1.0);
+
+        assert_eq!(poly.voices.iter().filter(|v| v.active).count(), 2);
+        assert_eq!(poly.voices[0].stutter_count, 1);
+        assert_eq!(poly.voices[0].sample_buffer.as_ref().unwrap().data[0], 0.4);
+        assert_eq!(poly.voices[1].stutter_count, 4);
+        assert_eq!(poly.voices[1].sample_buffer.as_ref().unwrap().data[0], 0.8);
     }
 }

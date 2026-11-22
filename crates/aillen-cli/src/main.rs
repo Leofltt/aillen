@@ -74,7 +74,7 @@ fn main() -> anyhow::Result<()> {
             Ok((size, _client_addr)) => {
                 let packet_slice = &buf[..size];
                 match rosc::decoder::decode_udp(packet_slice) {
-                    Ok((_, packet)) => handle_osc_packet(packet, &prod, &bank, &ui_handle),
+                    Ok((_, packet)) => handle_osc_packet(packet, &prod, &mut bank, &ui_handle),
                     Err(e) => eprintln!("Failed to decode OSC packet: {:?}", e),
                 }
             }
@@ -111,7 +111,7 @@ fn format_clean_osc_msg(sub_path: &str, args: &[OscType]) -> String {
     }
 }
 
-fn handle_osc_packet(packet: OscPacket, prod: &Sender<AudioMessage>, bank: &SampleBank, ui_handle: &UiHandle) {
+fn handle_osc_packet(packet: OscPacket, prod: &Sender<AudioMessage>, bank: &mut SampleBank, ui_handle: &UiHandle) {
     match packet {
         OscPacket::Message(msg) => {
             route_and_record_msg(msg, prod, bank, ui_handle);
@@ -127,7 +127,7 @@ fn handle_osc_packet(packet: OscPacket, prod: &Sender<AudioMessage>, bank: &Samp
 }
 
 /// Routes a single decoded OSC message to the audio message queue and updates UI text state cleanly.
-fn route_and_record_msg(msg: OscMessage, prod: &Sender<AudioMessage>, bank: &SampleBank, ui_handle: &UiHandle) {
+fn route_and_record_msg(msg: OscMessage, prod: &Sender<AudioMessage>, bank: &mut SampleBank, ui_handle: &UiHandle) {
     let addr = msg.addr.as_str();
     if addr.starts_with("/track/") {
         let parts: Vec<&str> = addr.split('/').collect();

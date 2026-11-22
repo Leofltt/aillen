@@ -7,7 +7,7 @@ use aillen_core::synth::hubass::hubass::SynthHubass;
 use aillen_core::synth::resonator::resonator::SynthResonator;
 use aillen_core::synth::swave::{swave::SwaveSynth, SwaveMode};
 use aillen_core::synth::sampler::Sampler;
-use aillen_core::synth::sampler::{PlayMode, StretchMode, load_audio_file};
+use aillen_core::synth::sampler::{PlayMode, StretchMode};
 use aillen_core::synth::synth303::synth303::Synth303;
 use aillen_core::synth::two_op::SynthMode;
 use aillen_core::synth::two_op::two_op::TwoOpSynth;
@@ -303,12 +303,6 @@ pub enum AudioMessage {
     },
 
     // Sampler specific
-    /// Loads an audio file into the Sampler buffer.
-    SamplerLoadSample {
-        track_id: usize,
-        /// Path to the audio file on disk.
-        path: String,
-    },
     /// Sets the Sampler playback mode.
     SamplerSetPlayMode {
         track_id: usize,
@@ -665,6 +659,10 @@ pub enum AudioMessage {
     SetTrackCombDamp {
         track_id: usize,
         damp: f32,
+    },
+    SetTrackCombMix {
+        track_id: usize,
+        mix: f32,
     },
     SetTrackChopperRate {
         track_id: usize,
@@ -1150,27 +1148,6 @@ pub fn start_audio_thread(
                                       }
                                   }
                               }
-                              AudioMessage::SamplerLoadSample { track_id, path } => {
-                                  if track_id < mixer.tracks.len() {
-                                      if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
-                                          if sampler.current_path.as_deref() == Some(&path) {
-                                              // Already loaded, do nothing
-                                          } else {
-                                              println!("Loading sample on track {} from path: {}", track_id, path);
-                                              match load_audio_file(&path) {
-                                                  Ok(buf) => {
-                                                      sampler.set_sample(buf);
-                                                      sampler.current_path = Some(path);
-                                                      println!("Sample loaded successfully!");
-                                                  }
-                                                  Err(e) => {
-                                                      eprintln!("Failed to load sample file: {:?}", e);
-                                                  }
-                                              }
-                                          }
-                                      }
-                                  }
-                              }
                               AudioMessage::SamplerSetPlayMode { track_id, mode } => {
                                   if track_id < mixer.tracks.len() {
                                       if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
@@ -1216,12 +1193,8 @@ pub fn start_audio_thread(
                               AudioMessage::SamplerLoadBuffer { track_id, buffer } => {
                                   if track_id < mixer.tracks.len() {
                                       if let Some(sampler) = mixer.tracks[track_id].instrument.as_any_mut().downcast_mut::<Sampler>() {
-                                          sampler.sample_buffer = Some(buffer.clone());
-                                          for voice in &mut sampler.voices {
-                                              voice.sample_buffer = Some(buffer.clone());
-                                          }
+                                          sampler.set_sample_arc(buffer);
                                           sampler.current_path = None;
-                                          println!("Sampler on track {}: Switched to preloaded buffer from SampleBank!", track_id);
                                       }
                                   }
                               }
@@ -1456,20 +1429,26 @@ pub fn start_audio_thread(
                              }
                              AudioMessage::SetTrackCombFreq { track_id, freq } => {
                                  if track_id < mixer.tracks.len() {
-                                     mixer.tracks[track_id].fx_chain.comb_filter_l.frequency = freq;
-                                     mixer.tracks[track_id].fx_chain.comb_filter_r.frequency = freq;
+                                     mixer.tracks[track_id].fx_chain.comb_filter_l.set_frequency(freq);
+                                     mixer.tracks[track_id].fx_chain.comb_filter_r.set_frequency(freq);
                                  }
                              }
                              AudioMessage::SetTrackCombFeedback { track_id, feedback } => {
                                  if track_id < mixer.tracks.len() {
-                                     mixer.tracks[track_id].fx_chain.comb_filter_l.feedback = feedback;
-                                     mixer.tracks[track_id].fx_chain.comb_filter_r.feedback = feedback;
+                                     mixer.tracks[track_id].fx_chain.comb_filter_l.set_feedback(feedback);
+                                     mixer.tracks[track_id].fx_chain.comb_filter_r.set_feedback(feedback);
                                  }
                              }
                              AudioMessage::SetTrackCombDamp { track_id, damp } => {
                                  if track_id < mixer.tracks.len() {
-                                     mixer.tracks[track_id].fx_chain.comb_filter_l.dampening_filter.set_cutoff(damp);
-                                     mixer.tracks[track_id].fx_chain.comb_filter_r.dampening_filter.set_cutoff(damp);
+                                     mixer.tracks[track_id].fx_chain.comb_filter_l.set_damp(damp);
+                                     mixer.tracks[track_id].fx_chain.comb_filter_r.set_damp(damp);
+                                 }
+                             }
+                             AudioMessage::SetTrackCombMix { track_id, mix } => {
+                                 if track_id < mixer.tracks.len() {
+                                     mixer.tracks[track_id].fx_chain.comb_filter_l.set_mix(mix);
+                                     mixer.tracks[track_id].fx_chain.comb_filter_r.set_mix(mix);
                                  }
                              }
                              AudioMessage::SetTrackChopperRate { track_id, rate } => {

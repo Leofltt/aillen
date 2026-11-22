@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use rosc::OscMessage;
 use crossbeam_channel::Sender;
 use crate::audio::AudioMessage;
@@ -5,13 +6,13 @@ use aillen_core::sample_bank::SampleBank;
 use aillen_core::dsp::{oscillator::{Waveform, SubWaveform}, filter::FilterType, distortion::DistortionMode};
 use aillen_core::synth::two_op::SynthMode;
 use aillen_core::synth::swave::SwaveMode;
-use aillen_core::synth::sampler::{PlayMode, StretchMode};
+use aillen_core::synth::sampler::{PlayMode, StretchMode, load_audio_file};
 
 fn osc_to_usize(arg: &rosc::OscType) -> Option<usize> {
     match arg {
-        rosc::OscType::Int(i) => Some(*i as usize),
-        rosc::OscType::Float(f) => Some(*f as usize),
-        rosc::OscType::Double(d) => Some(*d as usize),
+        rosc::OscType::Int(i) => Some((*i).max(0) as usize),
+        rosc::OscType::Float(f) if f.is_finite() => Some(f.max(0.0) as usize),
+        rosc::OscType::Double(d) if d.is_finite() => Some(d.max(0.0) as usize),
         _ => None,
     }
 }
@@ -39,7 +40,7 @@ pub fn parse_track_command(
     sub_addr: &str,
     msg: &OscMessage,
     prod: &Sender<AudioMessage>,
-    bank: &SampleBank,
+    bank: &mut SampleBank,
 ) {
     match sub_addr {
         "note/on" => {
@@ -211,18 +212,23 @@ pub fn parse_track_command(
             }
         }
         "fx/comb/freq" => {
-            if let Some(freq) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            if let Some(freq) = msg.args.get(0).and_then(osc_to_f32) {
                 let _ = prod.try_send(AudioMessage::SetTrackCombFreq { track_id, freq });
             }
         }
         "fx/comb/feedback" => {
-            if let Some(feedback) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            if let Some(feedback) = msg.args.get(0).and_then(osc_to_f32) {
                 let _ = prod.try_send(AudioMessage::SetTrackCombFeedback { track_id, feedback });
             }
         }
         "fx/comb/damp" => {
-            if let Some(damp) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            if let Some(damp) = msg.args.get(0).and_then(osc_to_f32) {
                 let _ = prod.try_send(AudioMessage::SetTrackCombDamp { track_id, damp });
+            }
+        }
+        "fx/comb/mix" => {
+            if let Some(mix) = msg.args.get(0).and_then(osc_to_f32) {
+                let _ = prod.try_send(AudioMessage::SetTrackCombMix { track_id, mix });
             }
         }
         "fx/chopper/rate" => {
@@ -581,18 +587,28 @@ pub fn parse_track_command(
         // Sampler specific (Tracks 1, 2, 3, 5)
         "sample/load" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(path) = msg.args.get(0).and_then(|a| a.clone().string()) {
-                let mut found_in_bank = None;
-                for (key, buffer) in &bank.samples {
-                    if path.ends_with(key) {
-                        found_in_bank = Some(buffer.clone());
-                        break;
-                    }
-                }
-                if let Some(buffer) = found_in_bank {
-                    println!("SampleBank: Match found for \"{}\", loading from cache!", path);
+                let cached = bank.get(&path).or_else(|| {
+                    bank.samples.iter().find_map(|(key, buffer)| {
+                        if path.ends_with(key) {
+                            Some(Arc::clone(buffer))
+                        } else {
+                            None
+                        }
+                    })
+                });
+                if let Some(buffer) = cached {
                     let _ = prod.try_send(AudioMessage::SamplerLoadBuffer { track_id, buffer });
                 } else {
-                    let _ = prod.try_send(AudioMessage::SamplerLoadSample { track_id, path });
+                    match load_audio_file(&path) {
+                        Ok(buf) => {
+                            let arc_buf = Arc::new(buf);
+                            bank.samples.insert(path, Arc::clone(&arc_buf));
+                            let _ = prod.try_send(AudioMessage::SamplerLoadBuffer { track_id, buffer: arc_buf });
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to load sample file \"{}\": {:?}", path, e);
+                        }
+                    }
                 }
             }
         }
@@ -607,7 +623,7 @@ pub fn parse_track_command(
         }
         "sample/mode" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
-                let mode_idx = arg.clone().int().unwrap_or(0);
+                let mode_idx = osc_to_i32(arg).unwrap_or(0);
                 let mode = match mode_idx {
                     0 => PlayMode::OneShot,
                     1 => PlayMode::Loop,
@@ -617,18 +633,18 @@ pub fn parse_track_command(
             }
         }
         "sample/pitch" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
-            if let Some(ratio) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            if let Some(ratio) = msg.args.get(0).and_then(osc_to_f32) {
                 let _ = prod.try_send(AudioMessage::SamplerSetPitchRatio { track_id, ratio });
             }
         }
         "sample/speed" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
-            if let Some(ratio) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            if let Some(ratio) = msg.args.get(0).and_then(osc_to_f32) {
                 let _ = prod.try_send(AudioMessage::SamplerSetSpeedRatio { track_id, ratio });
             }
         }
         "sample/mode/stretch" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
             if let Some(arg) = msg.args.get(0) {
-                let mode_idx = arg.clone().int().unwrap_or(0);
+                let mode_idx = osc_to_i32(arg).unwrap_or(0);
                 let mode = match mode_idx {
                     0 => StretchMode::Resample,
                     1 => StretchMode::Granular,
@@ -638,7 +654,7 @@ pub fn parse_track_command(
             }
         }
         "sample/grain_size" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
-            if let Some(size_ms) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            if let Some(size_ms) = msg.args.get(0).and_then(osc_to_f32) {
                 let _ = prod.try_send(AudioMessage::SamplerSetGrainSize { track_id, size_ms });
             }
         }
@@ -649,7 +665,7 @@ pub fn parse_track_command(
             }
         }
         "filter" if track_id == 1 || track_id == 2 || track_id == 3 || track_id == 5 => {
-            if let Some(pos) = msg.args.get(0).and_then(|a| a.clone().float()) {
+            if let Some(pos) = msg.args.get(0).and_then(osc_to_f32) {
                 let _ = prod.try_send(AudioMessage::SamplerSetDjFilter { track_id, position: pos });
             }
         }

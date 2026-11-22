@@ -262,8 +262,9 @@ Each track features an independent effects chain that can be modulated in real-t
 | `/track/<id>/fx/bitcrusher/bits` | `f` | `f32` | `16.0` | Bitcrusher quantization bit depth. Range: `1.0` to `16.0` (16.0 is bypass). |
 | `/track/<id>/fx/bitcrusher/downsample` | `i` | `i32` | `1` | Bitcrusher sample rate divider. Range: `1` (bypass) to `64` (hold samples for N steps). |
 | `/track/<id>/fx/comb/freq` | `f` | `f32` | `440.0` | Comb filter pitch tracking resonance frequency in Hz. Range: `20.0` to `10000.0`. |
-| `/track/<id>/fx/comb/feedback` | `f` | `f32` | `0.0` | Comb filter feedback ratio. Range: `-0.99` to `0.99` (0.0 is bypass). |
-| `/track/<id>/fx/comb/damp` | `f` | `f32` | `8000.0` | Comb filter feedback low-pass dampening cutoff frequency in Hz. |
+| `/track/<id>/fx/comb/feedback` | `f` | `f32` | `0.0` | Comb filter feedback ratio. Range: `-0.99` to `0.99`. |
+| `/track/<id>/fx/comb/damp` | `f` | `f32` | `8000.0` | Comb filter feedback low-pass dampening cutoff frequency in Hz. Range: `20.0` to Nyquist. |
+| `/track/<id>/fx/comb/mix` | `f` | `f32` | `0.0` | Comb filter dry/wet mix. Range: `0.0` (dry/bypass) to `1.0` (100% wet resonator; `0.5` = classic 50/50 comb). |
 | `/track/<id>/fx/compressor/ratio` | `f` | `f32` | `1.0` | Compression ratio. Range: `1.0` (no compression) to `20.0` (heavy compression). |
 | `/track/<id>/fx/compressor/threshold` | `f` | `f32` | `-24.0` | Threshold in dB, below which compression is applied. Range: `-60.0` to `0.0`. |
 | `/track/<id>/fx/compressor/attack` | `f` | `f32` | `0.01` | Attack time in seconds. Range: `0.0` (instant) to `1.0`. |
@@ -459,8 +460,9 @@ A pitch-tracked, feedback-damped Comb Filter for physical acoustic/metallic reso
 
 - **Parameters**:
   - `frequency`: `f32` (resonance pitch frequency in Hz). Default: `440.0`. Range: `20.0` to `10000.0`.
-  - `feedback`: `f32` (feedback ratio). Default: `0.0` (bypass). Range: `-0.99` to `0.99`.
-  - `dampening_cutoff`: `f32` (cutoff frequency of the low-pass dampening filter in the feedback loop). Default: `8000.0` Hz.
+  - `feedback`: `f32` (feedback ratio). Default: `0.0`. Range: `-0.99` to `0.99`.
+  - `dampening_cutoff`: `f32` (cutoff frequency of the low-pass dampening filter in the feedback loop). Default: `8000.0` Hz. Range: `20.0` to Nyquist.
+  - `mix`: `f32` (dry/wet crossfade amount). Default: `0.0` (bypass). Range: `0.0` (dry) to `1.0` (100% wet; `0.5` = classic 50/50 comb).
 
 ### 18. ADSR Envelope (`aillen_core::dsp::envelope::AdsrEnvelope`)
 
@@ -632,7 +634,7 @@ Loads audio files (WAV, MP3, FLAC, etc.) and plays them back polyphonically.
 | `/track/<id>/sample/grain_size` | `f` | `f32` | `40.0` | Granular grain size duration in milliseconds. Range: `5.0` to `500.0` ms. |
 | `/track/<id>/sample/overlap` | `i` | `i32` | `4` | Overlapping grain count. Range: `1` to `16`. |
 | `/track/<id>/filter` | `f` | `f32` | `0.0` | Sampler output channel DJ filter position. Low-Pass sweep: `-1.0` to `0.0` (20000 Hz down to 20 Hz). High-Pass sweep: `0.0` to `1.0` (20 Hz up to 20000 Hz). Center `0.0` is bypass. |
-| `/track/<id>/sample/slice/mode` | `i`/`b` | `i32` / `bool` | `0` (false) | Enable/disable sample slice playback mode. |
+| `/track/<id>/sample/slice/mode` | `i`/`b` | `i32` / `bool` | `0` (false) | Enable/disable sample slice playback mode. When enabled (`1`), triggers smoothly choke the previous voice on that track (~2 ms fade-out); non-sliced tracks remain polyphonic. |
 | `/track/<id>/sample/slice/count` | `i` | `i32` | `1` | Total number of slices to segment the sample buffer into. Range: `1` to `128`. |
 | `/track/<id>/sample/slice/select` | `i` | `i32` | `0` | Active slice index selector. Range: `0` to `count - 1`. |
 | `/track/<id>/sample/slice/stutter` | `i` | `i32` | `1` | Stutter repetition count for slice re-triggering. Range: `1` to `64`. |
